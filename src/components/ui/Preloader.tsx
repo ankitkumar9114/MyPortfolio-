@@ -16,6 +16,22 @@ const MAX_WAIT_MS = 15000;
 // Images that mount a moment after the first render (CMS content) are
 // picked up by one more scan this long after the start.
 const RESCAN_MS = 1200;
+// The LinkedIn post embeds are waited on too, but never longer than this
+// (they load from LinkedIn's servers, which can be slow).
+const EMBED_MAX_MS = 8000;
+
+// Resolves when a LinkedIn embed has loaded (AfterChatai marks it with
+// data-loaded) or after EMBED_MAX_MS, whichever comes first.
+function waitForEmbed(frame: HTMLIFrameElement, startedAt: number): Promise<void> {
+  return new Promise((resolve) => {
+    const deadline = startedAt + EMBED_MAX_MS;
+    const check = () => {
+      if (frame.dataset.loaded === "1" || Date.now() >= deadline) resolve();
+      else setTimeout(check, 150);
+    };
+    check();
+  });
+}
 
 // Loads AND decodes an image, so it's ready to paint the instant it scrolls
 // into view (decoding a big image mid-scroll is what causes jank).
@@ -114,12 +130,19 @@ export default function Preloader() {
       tasks.push(t);
       return t;
     };
+    const seenFrames = new Set<HTMLIFrameElement>();
     const scan = () => {
       for (const url of collectImageUrls()) {
         if (seen.has(url)) continue;
         seen.add(url);
         total += 1;
         track(prepareImage(url));
+      }
+      for (const frame of Array.from(document.querySelectorAll<HTMLIFrameElement>(".post-card iframe[src]"))) {
+        if (seenFrames.has(frame)) continue;
+        seenFrames.add(frame);
+        total += 1;
+        track(waitForEmbed(frame, startedAt));
       }
     };
 

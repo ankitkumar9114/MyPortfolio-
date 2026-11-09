@@ -2,7 +2,7 @@
 
 import { useContactDetails, type ContactDetails } from "@/lib/contactDetails";
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
-import { motion, useMotionValue, useReducedMotion, useScroll, useTransform } from "framer-motion";
+import { motion, useMotionValue, useReducedMotion, useScroll, useSpring, useTransform } from "framer-motion";
 import { playComputerHover, playPhoneRing } from "./footerSounds";
 
 // Footer: the last section, a landscape scene at the very end of the page.
@@ -53,10 +53,11 @@ const HEADING_TUCK = 0.5;
 const PHONE_HEADING_TOP = 64; // phone: px from the footer's top to the heading block
 // phone: the scene is this much shorter, so the character sits closer
 // under the heading (less empty sky between them)
-const PHONE_HEIGHT_FACTOR = 0.92;
+const PHONE_HEIGHT_FACTOR = 0.88;
 const PHONE_SKY_LIFT = 8; // phone: extra upward shift of the sky, % of its height
-const PHONE_HEAD_GAP = 32; // phone: minimum px between the heading and his head
+const PHONE_HEAD_GAP = 20; // phone: minimum px between the heading and his head
 const PHONE_MQ = "(max-width: 424px)";
+const TOUCH_PARALLAX_STRENGTH = 0.6; // phone/tablet parallax distance vs desktop
 const TABLET_MQ = "(min-width: 425px) and (max-width: 1024px)";
 // tablet: extra share of the scene's height shown below the usual crop
 // (~85px), for the bottom nav to sit over
@@ -165,7 +166,18 @@ export default function Footer() {
   //   courtyard, so he slides into place in front of it,
   //   tree: starts lower and moves faster (closest to you).
   const reduceMotion = useReducedMotion();
-  const { scrollYProgress } = useScroll({ target: ref, offset: ["start end", "end end"] });
+  const noParallax = reduceMotion;
+  // Phone and tablet: a softer parallax, so it stays smooth on touch screens
+  // (desktop unchanged). The layers follow an eased copy of the scroll
+  // progress instead of jumping with every touch-scroll step, move 60% as
+  // far, and are kept on their own GPU layers (will-change) so they're
+  // moved, not redrawn, each frame.
+  const touch = phone || tablet;
+  const strength = touch ? TOUCH_PARALLAX_STRENGTH : 1;
+  const { scrollYProgress: rawProgress } = useScroll({ target: ref, offset: ["start end", "end end"] });
+  const easedProgress = useSpring(rawProgress, { stiffness: 120, damping: 26, mass: 0.35, restDelta: 0.0005 });
+  const scrollYProgress = touch ? easedProgress : rawProgress;
+  const layerWillChange = touch ? "transform" : undefined;
   // window height, set after mount (0 on the server and the first render, so
   // the server HTML and hydration match)
   const vh = useMotionValue(0);
@@ -175,7 +187,7 @@ export default function Footer() {
     window.addEventListener("resize", set);
     return () => window.removeEventListener("resize", set);
   }, [vh]);
-  const shift = (k: number) => ([p, h]: number[]) => (reduceMotion ? 0 : k * (1 - p) * h);
+  const shift = (k: number) => ([p, h]: number[]) => (noParallax ? 0 : k * strength * (1 - p) * h);
   const skyY = useTransform([scrollYProgress, vh], shift(PARALLAX.sky));
   const treeY = useTransform([scrollYProgress, vh], shift(PARALLAX.tree));
   const baseY = useTransform([scrollYProgress, vh], shift(PARALLAX.base));
@@ -186,7 +198,7 @@ export default function Footer() {
   const headingRef = useRef<HTMLDivElement>(null);
   const characterRef = useRef<HTMLImageElement>(null);
   const headEnd = useMotionValue(0);
-  const headingY = useTransform([scrollYProgress, headEnd], ([p, e]: number[]) => (reduceMotion ? e : e * p));
+  const headingY = useTransform([scrollYProgress, headEnd], ([p, e]: number[]) => (noParallax ? e : e * p));
   useEffect(() => {
     const footer = ref.current, h2 = headingRef.current, ch = characterRef.current;
     if (!footer || !h2 || !ch) return;
@@ -274,7 +286,7 @@ export default function Footer() {
         className="pointer-events-none absolute inset-0 block h-full w-full select-none object-cover object-bottom"
         // phone: nudged up a little more (still clipped at the footer's top,
         // so it never covers the purple section above)
-        style={{ ...layerStyle(phone ? { ...st.sky, y: st.sky.y - PHONE_SKY_LIFT } : st.sky), y: skyY }}
+        style={{ ...layerStyle(phone ? { ...st.sky, y: st.sky.y - PHONE_SKY_LIFT } : st.sky), y: skyY, willChange: layerWillChange }}
       />
       {/* Heading over the sky, under the base layer (Figma: Arvo 700 100px,
           uppercase, white, soft drop shadow, 1186px wide) */}
@@ -285,6 +297,7 @@ export default function Footer() {
         className="absolute inset-x-0 z-10 mx-auto flex max-w-[100vw] flex-col items-center gap-3 px-4 tablet:max-w-[755px] tablet:gap-[20px] desktop:gap-7 text-center text-white"
         style={{
           y: headingY,
+          willChange: layerWillChange,
           top: st.headingTop, // px below the previous (purple) section
           translate: `${st.headingX}% 0`,
           scale: String(st.headingScale),
@@ -334,7 +347,7 @@ export default function Footer() {
         height={BASE.h}
         loading="lazy"
         className="pointer-events-none absolute inset-x-0 bottom-0 z-20 block h-auto w-full select-none"
-        style={{ ...layerStyle(st.base), y: baseY }}
+        style={{ ...layerStyle(st.base), y: baseY, willChange: layerWillChange }}
       />
       </div>
       {/* character + the props on his table, moving/sizing together
@@ -342,7 +355,7 @@ export default function Footer() {
       <motion.div
         // phone: its own width in the 340%-wide scene (else it'd be huge)
         className="pointer-events-none absolute z-20 [--cw:28%] [container-type:inline-size] tablet:[--cw:var(--cw-default)]"
-        style={{ ["--cw-default" as string]: CHARACTER_W_CSS, left: "50%", bottom: "4%", width: "var(--cw)", marginLeft: "calc(var(--cw) / -2)", ...layerStyle(st.character), y: characterY }}
+        style={{ ["--cw-default" as string]: CHARACTER_W_CSS, left: "50%", bottom: "4%", width: "var(--cw)", marginLeft: "calc(var(--cw) / -2)", ...layerStyle(st.character), y: characterY, willChange: layerWillChange }}
       >
         {/* eslint-disable-next-line @next/next/no-img-element -- decorative layer */}
         <img
@@ -442,7 +455,7 @@ export default function Footer() {
         // phone: a smaller tree at the window's top-left, rising over the
         // purple section (the window starts 35.3% across the 340%-wide scene)
         className="pointer-events-none absolute bottom-[56%] left-[var(--tree-left-phone)] z-30 block h-auto w-[24%] select-none tablet:bottom-[6%] tablet:left-[1%] tablet:w-[var(--tree-w)] tablet:portrait:left-[var(--tree-left-tablet)] desktop:portrait:left-[1%]"
-        style={{ ["--tree-left-tablet" as string]: TREE_LEFT_TABLET, ["--tree-left-phone" as string]: TREE_LEFT_PHONE, ["--tree-w" as string]: `${TREE_WIDTH}%`, ...layerStyle(st.tree), y: treeY }}
+        style={{ ["--tree-left-tablet" as string]: TREE_LEFT_TABLET, ["--tree-left-phone" as string]: TREE_LEFT_PHONE, ["--tree-w" as string]: `${TREE_WIDTH}%`, ...layerStyle(st.tree), y: treeY, willChange: layerWillChange }}
       />
       </div>
       </div>

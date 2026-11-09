@@ -1,8 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { collection, onSnapshot, query, where } from "firebase/firestore";
-import { db } from "./firebase";
+import { usePublishedCollection } from "./cmsCollection";
 
 // A case study card, as stored in Firestore (collection "caseStudies") and
 // edited in the /admin CRM.
@@ -80,27 +78,13 @@ export function normalizeCaseStudy(id: string, d: Record<string, unknown>): Case
   };
 }
 
-// Published case studies, live from Firestore (updates as soon as you save in
-// /admin). Falls back to DEFAULT_CASE_STUDIES while loading, when Firebase
-// isn't configured, on error, or when nothing is published yet.
-export function useCaseStudies(): CaseStudy[] {
-  const [studies, setStudies] = useState<CaseStudy[] | null>(null);
-  useEffect(() => {
-    const firestore = db();
-    if (!firestore) return;
-    // single equality filter (no composite index needed); sorted here
-    const q = query(collection(firestore, CASE_STUDIES_COLLECTION), where("published", "==", true));
-    return onSnapshot(
-      q,
-      (snap) => setStudies(snap.docs.map((d) => normalizeCaseStudy(d.id, d.data())).sort((a, b) => a.order - b.order)),
-      (err) => {
-        console.warn("Case studies: using built-in cards,", err.message);
-        setStudies(null);
-      },
-    );
-  }, []);
-  return studies && studies.length ? studies : DEFAULT_CASE_STUDIES;
-}
+// Published case studies, as sent with the page by the server (refreshed
+// every minute, see cmsServer.ts), with each image as a cacheable URL. Not
+// subscribed live: the live query would download every image again inside
+// the documents. Falls back to a live read when the server had nothing, and
+// to DEFAULT_CASE_STUDIES when nothing is published.
+export const useCaseStudies = () =>
+  usePublishedCollection(CASE_STUDIES_COLLECTION, normalizeCaseStudy, DEFAULT_CASE_STUDIES, { live: false });
 
 // Shrinks an uploaded image to a compact WebP data URL (max width/height
 // `max`, under ~`maxBytes`) so it can live inside the Firestore document

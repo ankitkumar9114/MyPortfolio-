@@ -2,6 +2,7 @@
 
 import { linkedinEmbedUrl, useLinkedinPosts } from "@/lib/linkedinPosts";
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { preconnect } from "react-dom";
 
 // The section after the chatai ("My Fridge Magnet Collection"): once the
 // mat's pinned scroll ends, the page scrolls on into this deep purple panel.
@@ -36,8 +37,14 @@ function subscribePhone(cb: () => void) {
 // Selected LinkedIn posts, via LinkedIn's "Embed this post" code. To add or
 // remove one, edit this list (urn + the height LinkedIn's embed code gives).
 
+const noopSubscribe = () => () => {};
+
+// The embeds come from LinkedIn's servers: open those connections early.
+const LINKEDIN_ORIGINS = ["https://www.linkedin.com", "https://static.licdn.com", "https://media.licdn.com"];
+
 export default function AfterChatai() {
   const LINKEDIN_POSTS = useLinkedinPosts(); // live from the /admin CMS (Firebase)
+  LINKEDIN_ORIGINS.forEach((o) => preconnect(o));
   // Card size + gap, live-tunable in dev (sliders panel, desktop only, shown
   // while this section is on screen). Share the numbers to make them default.
   const [cardScale, setCardScale] = useState(CARD_SCALE);
@@ -47,6 +54,13 @@ export default function AfterChatai() {
   const zoom = cardScale * (tablet ? TABLET_CARD_FACTOR : phone ? PHONE_CARD_FACTOR : 1);
   const sectionRef = useRef<HTMLElement>(null);
   const [inView, setInView] = useState(false);
+  // Every embed starts loading as soon as the page is running in the browser
+  // (while the loader is still up; the loader waits for them, see
+  // Preloader.tsx), so they're ready by the time anyone scrolls here. Not in
+  // the server HTML: the browser would start them before React could catch
+  // their load events.
+  const near = useSyncExternalStore(noopSubscribe, () => true, () => false);
+  const [loaded, setLoaded] = useState<Record<string, boolean>>({});
   useEffect(() => {
     const el = sectionRef.current;
     if (!el || process.env.NODE_ENV !== "development") return;
@@ -137,14 +151,17 @@ export default function AfterChatai() {
                     broke smooth scrolling (Lenis) and froze the custom cursor
                     while hovering a post. The link layer on top keeps those
                     events on the page; clicking opens the post on LinkedIn. */}
+                {/* soft placeholder until the post has loaded */}
+                {!loaded[`${copy}-${post.urn}`] && <div aria-hidden="true" className="absolute inset-0 animate-pulse bg-[#f3f2ef]" />}
                 <iframe
-                  src={linkedinEmbedUrl(post.urn)}
+                  src={near ? linkedinEmbedUrl(post.urn) : undefined}
                   title="LinkedIn post"
                   width="100%"
                   height={post.height}
-                  loading="lazy"
                   tabIndex={-1}
-                  className="pointer-events-none block w-full border-0"
+                  onLoad={() => near && setLoaded((m) => ({ ...m, [`${copy}-${post.urn}`]: true }))}
+                  data-loaded={loaded[`${copy}-${post.urn}`] ? "1" : undefined}
+                  className="pointer-events-none relative block w-full border-0"
                   // Chrome on iOS adds its own attribute to iframes before
                   // React loads (__gcrchildframeremotetoken); ignore that here
                   suppressHydrationWarning
@@ -156,6 +173,9 @@ export default function AfterChatai() {
                   tabIndex={copy === 1 ? -1 : undefined}
                   aria-label="Open this post on LinkedIn"
                   className="absolute inset-0 z-10 cursor-pointer rounded-xl outline-none focus-visible:ring-4 focus-visible:ring-white/70"
+                  // some browser extensions style these links (an inline border)
+                  // before React loads; ignore that mismatch on this element
+                  suppressHydrationWarning
                 />
               </div>
               );

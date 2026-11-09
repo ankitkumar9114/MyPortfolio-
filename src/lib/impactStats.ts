@@ -1,8 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { collection, onSnapshot, query, where } from "firebase/firestore";
-import { db } from "./firebase";
+import { usePublishedCollection } from "./cmsCollection";
 
 // An "Impact in Numbers" stat card, stored in Firestore (collection
 // "impactStats") and edited in the /admin CMS.
@@ -36,22 +34,7 @@ export function normalizeImpactStat(id: string, d: Record<string, unknown>): Imp
   };
 }
 
-// Published stat cards, live from Firestore; DEFAULT_IMPACT_STATS while
-// loading, on error, or when none are published.
-export function useImpactStats(): ImpactStat[] {
-  const [stats, setStats] = useState<ImpactStat[] | null>(null);
-  useEffect(() => {
-    const firestore = db();
-    if (!firestore) return;
-    const q = query(collection(firestore, IMPACT_STATS_COLLECTION), where("published", "==", true));
-    return onSnapshot(
-      q,
-      (snap) => setStats(snap.docs.map((d) => normalizeImpactStat(d.id, d.data())).sort((a, b) => a.order - b.order)),
-      (err) => {
-        console.warn("Impact stats: using built-in cards,", err.message);
-        setStats(null);
-      },
-    );
-  }, []);
-  return stats && stats.length ? stats : DEFAULT_IMPACT_STATS;
-}
+// Published stat cards, live from Firestore (starting from what the server
+// sent with the page); DEFAULT_IMPACT_STATS on error or when none are
+// published.
+export const useImpactStats = () => usePublishedCollection(IMPACT_STATS_COLLECTION, normalizeImpactStat, DEFAULT_IMPACT_STATS);

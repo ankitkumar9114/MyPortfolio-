@@ -95,29 +95,41 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
           `}
         </Script>
         {/* Some browser extensions stamp attributes such as bis_skin_checked
-            onto every <div> before React loads, which React then reports as
+            onto elements (bis_skin_checked on <div>s, bis_skin_element on links) before React loads, which React then reports as
             a hydration mismatch. This strips them as they're added (before
             hydration runs), so the page matches what the server sent. */}
         <Script id="strip-extension-attrs" strategy="beforeInteractive">
           {`
             (function () {
-              var attrs = ["bis_skin_checked", "bis_register", "__processed_"];
-              var sel = attrs.map(function (a) { return "[" + a + "]"; }).join(",");
+              // any attribute these extensions stamp on elements: bis_skin_checked,
+              // bis_skin_element, bis_register, __processed_…
+              function isExtensionAttr(name) {
+                return name.indexOf("bis_") === 0 || name.indexOf("__processed_") === 0;
+              }
               function clean(el) {
-                if (!el || !el.removeAttribute) return;
-                for (var i = 0; i < attrs.length; i++) if (el.hasAttribute(attrs[i])) el.removeAttribute(attrs[i]);
+                if (!el || !el.attributes) return;
+                for (var i = el.attributes.length - 1; i >= 0; i--) {
+                  var n = el.attributes[i].name;
+                  if (isExtensionAttr(n)) el.removeAttribute(n);
+                }
               }
               function cleanTree(root) {
                 clean(root);
-                if (root && root.querySelectorAll) root.querySelectorAll(sel).forEach(clean);
+                if (root && root.querySelectorAll) root.querySelectorAll("*").forEach(clean);
               }
               cleanTree(document.documentElement);
-              new MutationObserver(function (records) {
+              var mo = new MutationObserver(function (records) {
                 records.forEach(function (r) {
-                  if (r.type === "attributes") clean(r.target);
-                  else r.addedNodes.forEach(cleanTree);
+                  if (r.type === "attributes") {
+                    if (isExtensionAttr(r.attributeName)) r.target.removeAttribute(r.attributeName);
+                  } else r.addedNodes.forEach(cleanTree);
                 });
-              }).observe(document.documentElement, { attributes: true, attributeFilter: attrs, childList: true, subtree: true });
+              });
+              mo.observe(document.documentElement, { attributes: true, childList: true, subtree: true });
+              // only needed until React has hydrated the page
+              window.addEventListener("load", function () {
+                setTimeout(function () { mo.disconnect(); }, 4000);
+              });
             })();
           `}
         </Script>

@@ -495,8 +495,12 @@ body {
 
 /* LinkedIn posts row (AfterChatai.tsx): pauses only while the pointer is on
    a card itself, not on the empty space around/between/below the cards. */
-.posts-marquee:has(.post-card:hover) .animate-marquee {
-  animation-play-state: paused;
+/* Desktop only: on phone/tablet a tap counts as "hover" and froze the row;
+   there the row keeps moving and a tap just opens the post. */
+@media (min-width: 1025px) {
+  .posts-marquee:has(.post-card:hover) .animate-marquee {
+    animation-play-state: paused;
+  }
 }
 
 /* Footer table props (Footer.tsx): the telephone grows a little on hover
