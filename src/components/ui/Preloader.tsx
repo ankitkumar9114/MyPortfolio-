@@ -188,12 +188,14 @@ export default function Preloader() {
       ref={containerRef}
       className="fixed inset-0 z-[1000] flex items-end justify-between bg-[var(--background)] p-6 sm:p-10"
     >
-      <span className="text-xs uppercase tracking-[0.2em] text-[var(--muted)]">
+      {/* site fonts: Merriweather (section labels) for the word, Arvo
+          (headlines) for the counter */}
+      <span className="font-[family-name:var(--font-serif)] text-sm font-bold tracking-[0.12em] text-[var(--muted)] sm:text-base">
         Loading
       </span>
       <span
         ref={countRef}
-        className="font-[family-name:var(--font-display)] text-[12vw] leading-none tabular-nums sm:text-[8vw]"
+        className="font-[family-name:var(--font-arvo)] text-[12vw] font-bold leading-none tabular-nums sm:text-[8vw]"
       >
         0
       </span>
