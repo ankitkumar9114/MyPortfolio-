@@ -1,26 +1,611 @@
 @import "tailwindcss";
 
+/* The hero's three breakpoints: phone (<425px, no prefix needed since it's
+   the unprefixed/default state), tablet (425-1024px, `tablet:`), desktop
+   (1025px+, `desktop:`). Registered as named theme breakpoints rather than
+   one-off arbitrary variants (`min-[425px]:`) — named breakpoints sort
+   correctly against each other in the compiled stylesheet; arbitrary
+   variants can sort before/after named ones unpredictably and silently
+   lose the cascade at overlapping widths. Each of the three layout
+   variants (GradientHero, Header, the marquee ribbons) is a full separate
+   block gated by `block tablet:hidden` (phone-only) /
+   `hidden tablet:block desktop:hidden` (tablet-only) /
+   `hidden desktop:block` (desktop-only), rather than relying on `max-*`
+   variants. */
+@theme {
+  --breakpoint-tablet: 425px;
+  --breakpoint-desktop: 1025px;
+}
+
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background: #fafaf9;
+  --foreground: #141414;
+  --muted: #6b6b68;
+  --border: rgba(20, 20, 20, 0.12);
+  --accent: #ff5a3c;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --background: #0b0b0a;
+    --foreground: #f4f4f2;
+    --muted: #8f8f8a;
+    --border: rgba(244, 244, 242, 0.14);
+    --accent: #ff7a5c;
+  }
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --color-muted: var(--muted);
+  --color-border: var(--border);
+  --color-accent: var(--accent);
+  --font-sans: var(--font-body);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+html {
+  background: var(--background);
+}
+
+/* Textured wall background for whatever comes after the hero. The hero
+   itself is opaque and always the first thing in the page, so it fully
+   covers this for its own height — the wall texture only ever becomes
+   visible starting right where the hero's pattern ends, with no extra
+   positioning needed to "start after" it. Tiled vertically (repeat-y) at
+   full viewport width so it keeps covering the page however tall the
+   content below the hero ends up being; var(--background) stays as the
+   fallback color while the image loads.
+
+   wall-tile.webp (not the plain Wall Image.webp) — a 1440x2420 composite
+   (built via sharp: a vertically-flipped copy of raw-images/Wall Image.png
+   on top, the plain unflipped original directly below — per request, both
+   halves flipped relative to the first version of this composite, which
+   had the unflipped original on top instead) rather than the raw
+   1440x1210 texture repeated as-is. Plain repeat-y made every tile
+   boundary an abrupt cut (the top edge of one copy butting against the
+   bottom edge of the next), visible as a hard seam. Stacking a flipped
+   copy against an unflipped one instead means every boundary in the
+   repeating pattern is two IDENTICAL rows meeting each other (the
+   original's own edge against itself, mirrored) — a seamless reflection
+   instead of a cut, regardless of which one is on top. Regenerate with
+   the inline sharp snippet from this component's own history if Wall
+   Image.png ever changes; it's a derived asset, not something to
+   hand-edit.
+
+   Per request, the base image feeding this composite (and the same-source
+   Card bg.webp used inside the featured-works cards) is now also flipped
+   both horizontally (.flop()) and vertically (.flip()) relative to the
+   raw source — applied to the base BEFORE the seamless vertical-flip/
+   stack step above, not to the finished composite (flipping the whole
+   finished composite vertically would be a no-op: it's already built to
+   be vertically self-symmetric, top being the literal mirror of bottom).
+
+   background-attachment: fixed (per request) — the texture stays pinned
+   to the viewport instead of scrolling with the page content, so
+   whatever scrolls past (including the featured-works card stack) slides
+   over a static backdrop rather than dragging the wall texture along
+   with it. Longhand properties instead of the single `background:`
+   shorthand specifically so attachment can be set here without having to
+   re-declare image/position/size/repeat all in one shorthand value.
+   Known caveat: `background-attachment: fixed` has a long-standing iOS
+   Safari bug (it can fail to render, or tank scroll performance) — worth
+   revisiting with a JS-driven fallback if this ships to iOS users and it
+   turns out to matter there. */
+body {
+  background-color: var(--background);
+  background-image: url("/images/wall-tile.webp");
+  background-position: top center;
+  background-size: 100% auto;
+  background-repeat: repeat-y;
+  background-attachment: fixed;
+  color: var(--foreground);
+  font-family: var(--font-body), Arial, Helvetica, sans-serif;
+}
+
+/* Phone: the wall texture shown upside down (flipped vertically). A body
+   background can't be transformed, so on phone it's drawn by a fixed
+   full-screen layer behind the page instead, mirrored with scaleY(-1).
+   It uses wall-tile-phone.webp: only the bright middle 55% of the wall
+   (its top/bottom edges are shaded dark, which showed as dark bands on the
+   short phone tile), stacked with a mirrored copy so it still tiles
+   seamlessly. Built with sharp from wall-tile.webp. */
+@media (max-width: 424px) {
+  /* the plain fallback color moves to <html>, behind the mirrored layer */
+  html {
+    background-color: var(--background);
+  }
+  body {
+    background-color: transparent;
+    background-image: none;
+  }
+  body::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    z-index: -1;
+    pointer-events: none;
+    background-image: url("/images/wall-tile-phone.webp");
+    background-position: top center;
+    background-size: 100% auto;
+    background-repeat: repeat-y;
+    transform: scaleY(-1);
   }
 }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+/* Custom cursor replaces the OS cursor on devices with a real mouse only.
+   Not on the /admin CRM (marked data-admin), which has no custom cursor. */
+@media (pointer: fine) {
+  body:not(:has([data-admin])) {
+    cursor: none;
+  }
+
+  body:not(:has([data-admin])) :is(a, button) {
+    cursor: none;
+  }
+}
+
+::selection {
+  background: var(--accent);
+  color: #fff;
+}
+
+@keyframes marquee {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(-50%);
+  }
+}
+
+.animate-marquee {
+  animation: marquee 18s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-marquee {
+    animation: none;
+  }
+}
+
+/* Slow ambient rotation for background decorations (e.g. the hero spiral).
+   `rotate` is its own CSS property in Tailwind v4 (not folded into
+   `transform`), so this composes cleanly with any translate/scale utility
+   classes already on the element instead of overriding them. */
+@keyframes spin-slow {
+  to {
+    rotate: 360deg;
+  }
+}
+
+.animate-spin-slow {
+  animation: spin-slow 180s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-spin-slow {
+    animation: none;
+  }
+}
+
+/* ImpactInNumbers' desktop-only 23.5px upward nudge on its whole section —
+   a plain class + real media query instead of a `desktop:translate-y-[…]`
+   Tailwind utility. Confirmed via direct stylesheet inspection that
+   Tailwind's arbitrary-value scanner silently failed to generate ANY
+   rule for that class (a decimal arbitrary value, `-23.5px`, tripped it
+   up — same family of "Tailwind arbitrary-value syntax has a parsing
+   edge case" bug as the space-in-filename bg-[url(...)] issue elsewhere
+   in this codebase) — the class showed up correctly in the rendered
+   HTML's className, but getComputedStyle(...).transform stayed "none"
+   since no CSS rule ever backed it. This sidesteps that scanner
+   entirely. See ImpactInNumbers.tsx for why this offset exists at all. */
+@media (min-width: 1025px) {
+  .impact-section-shift {
+    transform: translateY(-23.5px);
+  }
+}
+
+
+/* Grandma's cigarette (DesktopDecorEntrance.tsx): soft puffs that rise
+   up and to the right (away from her face) and widen from the tip, staggered so there's always smoke in the
+   air, plus a flickering ember on the lit tip. Medium size: each puff
+   starts ~18px and grows to ~50px over a ~110px rise. */
+.grandma-smoke-puff {
+  position: absolute;
+  left: -7px;
+  top: -7px;
+  width: 18px;
+  height: 18px;
+  margin-left: -2px;
+  margin-top: -2px;
+  border-radius: 9999px;
+  background: radial-gradient(circle, rgba(245, 245, 245, 0.95) 0%, rgba(230, 230, 230, 0.6) 45%, rgba(230, 230, 230, 0) 72%);
+  filter: blur(2px);
+  opacity: 0;
+  animation: grandma-smoke 4s ease-out infinite;
+}
+
+@keyframes grandma-smoke {
+  0% {
+    transform: translate(0, 0) scale(0.5);
+    opacity: 0;
+  }
+  12% {
+    opacity: 0.95;
+  }
+  45% {
+    transform: translate(28px, -34px) scale(1.6);
+    opacity: 0.75;
+  }
+  75% {
+    transform: translate(42px, -72px) scale(2.3);
+    opacity: 0.45;
+  }
+  100% {
+    transform: translate(60px, -100px) scale(2.9);
+    opacity: 0;
+  }
+}
+
+.grandma-ember {
+  position: absolute;
+  left: -3px;
+  top: -3px;
+  width: 6px;
+  height: 6px;
+  border-radius: 9999px;
+  background: radial-gradient(circle, #fff3b0 0%, #ff8a1f 55%, #d93a00 100%);
+  box-shadow: 0 0 6px 2px rgba(255, 120, 30, 0.75);
+  animation: grandma-ember 1.6s ease-in-out infinite;
+}
+
+@keyframes grandma-ember {
+  0%,
+  100% {
+    opacity: 0.85;
+    box-shadow: 0 0 5px 1px rgba(255, 120, 30, 0.6);
+  }
+  50% {
+    opacity: 1;
+    box-shadow: 0 0 9px 3px rgba(255, 140, 40, 0.9);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .grandma-smoke-puff,
+  .grandma-ember {
+    animation: none;
+  }
+}
+
+/* Pauses a marquee in place (no jump back to the start) while the
+   pointer is over its wrapper — used on ImpactInNumbers' stat-card row. */
+.marquee-pause-on-hover:hover .animate-marquee {
+  animation-play-state: paused;
+}
+
+/* Fridge-magnet sticker slots: hidden beyond their own side of the window
+   (--from-x), with a little extra spin; they fly in when the chatai's frame
+   is open. --delay/--dur/--spin are randomized per entrance in JS. */
+.fridge-slot {
+  translate: var(--from-x) 0;
+  rotate: calc(var(--rot) + var(--spin, 0deg));
+  opacity: 0;
+  transition:
+    translate var(--dur, 800ms) cubic-bezier(0.16, 1, 0.3, 1) var(--delay, 0ms),
+    rotate var(--dur, 800ms) cubic-bezier(0.16, 1, 0.3, 1) var(--delay, 0ms),
+    opacity 0.25s ease-out var(--delay, 0ms);
+}
+.group[data-open="true"] .fridge-slot {
+  translate: 0 0;
+  rotate: var(--rot);
+  opacity: 1;
+}
+@media (prefers-reduced-motion: reduce) {
+  .fridge-slot {
+    translate: 0 0;
+    transition: opacity 0.3s ease-out;
+  }
+}
+
+/* Fridge-magnet stickers on the chatai (FridgeStickers.tsx). Hovered or
+   selected (clicked) ones lift off. The shadow's
+   direction (--sx/--sy) is aimed away from the fan, the scene's light. On
+   hover the sticker lifts off and hovers: bigger, its shadow farther out,
+   softer and lighter, with a gentle bob. */
+.fridge-sticker {
+  filter: drop-shadow(var(--sx) var(--sy) 5px rgba(40, 10, 20, 0.55));
+  transition:
+    transform 0.45s cubic-bezier(0.2, 0.8, 0.2, 1),
+    filter 0.45s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.fridge-sticker.is-hovered,
+.fridge-sticker.is-selected {
+  transform: translateY(-14px) scale(1.08);
+  filter: drop-shadow(calc(var(--sx) * var(--lift)) calc(var(--sy) * var(--lift)) 18px rgba(40, 10, 20, 0.34));
+}
+.fridge-sticker.is-hovered > img,
+.fridge-sticker.is-selected > img {
+  animation: sticker-fly 2.4s ease-in-out 0.45s infinite;
+}
+@keyframes sticker-fly {
+  0%,
+  100% {
+    transform: translateY(0) rotate(0deg);
+  }
+  50% {
+    transform: translateY(-6px) rotate(1.5deg);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .fridge-sticker.is-hovered > img,
+  .fridge-sticker.is-selected > img {
+    animation: none;
+  }
+}
+.fridge-sticker:focus-visible {
+  outline: 2px solid #012755;
+  outline-offset: 4px;
+  border-radius: 12px;
+}
+/* Selected magnet's gradient border (SelectOutline) fades in. */
+.fridge-sticker {
+  position: relative;
+}
+.fridge-outline {
+  opacity: 0;
+  transition: opacity 0.25s ease-out;
+}
+.fridge-sticker.is-selected .fridge-outline {
+  opacity: 1;
+}
+
+/* The selected magnet's border gradient flows continuously: a looping
+   pink -> orange -> yellow -> orange -> pink band, twice the element's size,
+   sliding diagonally. Runs only while selected. */
+.fridge-outline-ring {
+  background-image: linear-gradient(135deg, #fb286d 0%, #ff7a1a 25%, #ffd23f 50%, #ff7a1a 75%, #fb286d 100%);
+  background-size: 200% 200%;
+  animation: fridge-border-flow 2.4s linear infinite;
+  animation-play-state: paused;
+}
+.fridge-sticker.is-selected .fridge-outline-ring {
+  animation-play-state: running;
+}
+@keyframes fridge-border-flow {
+  from {
+    background-position: 0% 0%;
+  }
+  to {
+    background-position: 200% 200%;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .fridge-outline-ring {
+    animation: none;
+  }
+}
+
+/* Memory photos (MemoryPhotos.tsx): polaroid prints that fly up from the
+   window's bottom center to their spot, can be dragged, and dissolve away
+   when another magnet is picked. Their shadow is aimed like the magnets'
+   (away from the fan, top-right). */
+.memory-photo {
+  width: min(13.5vw, 23vh, 250px);
+  padding: 7% 7% 0;
+  background: #fbf8f2;
+  border-radius: 3px;
+  cursor: grab;
+  touch-action: none;
+  filter: drop-shadow(-8px 9px 6px rgba(40, 10, 20, 0.35));
+  transition: filter 0.25s ease-out, scale 0.25s ease-out;
+}
+.memory-photo:hover {
+  filter: drop-shadow(-14px 16px 12px rgba(40, 10, 20, 0.3));
+}
+.memory-photo.is-dragging {
+  cursor: grabbing;
+  scale: 1.04;
+  filter: drop-shadow(-22px 26px 18px rgba(40, 10, 20, 0.26));
+}
+.memory-caption {
+  display: block;
+  padding: 0.5em 0 0.7em;
+  text-align: center;
+  font-family: var(--font-serif), serif;
+  font-weight: 700;
+  font-size: clamp(11px, 0.9vw, 15px);
+  letter-spacing: 0.04em;
+  color: #325175;
+}
+.memory-photo-in {
+  animation-name: memory-photo-fly;
+  animation-timing-function: cubic-bezier(0.16, 1, 0.3, 1);
+  animation-fill-mode: backwards;
+}
+@keyframes memory-photo-fly {
+  from {
+    transform: translate(var(--from-x), var(--from-y)) rotate(var(--spin)) scale(var(--from-scale, 1));
+  }
+  to {
+    transform: none;
+  }
+}
+.memory-photo-out {
+  animation-name: memory-photo-dissolve;
+  animation-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+  animation-fill-mode: both;
+}
+@keyframes memory-photo-dissolve {
+  0% {
+    opacity: 1;
+    filter: blur(0);
+    transform: none;
+  }
+  60% {
+    opacity: 0.45;
+    filter: blur(3px);
+  }
+  100% {
+    opacity: 0;
+    filter: blur(10px);
+    transform: translateY(-18px) scale(0.94);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .memory-photo-in {
+    animation-name: memory-photo-fade;
+  }
+  @keyframes memory-photo-fade {
+    from {
+      opacity: 0;
+    }
+  }
+}
+
+/* The stack of prints the memory photos fly out of: bottom center, cards at
+   72% of a photo's size, mostly below the window's edge. Slides up into view
+   with the magnets (the chatai frame's data-open) and back down after. */
+.memory-stack {
+  position: absolute;
+  left: 50%;
+  bottom: 0;
+  /* sized like one card, so the translate % below is of a card's height */
+  width: calc(min(13.5vw, 23vh, 250px) * 0.72);
+  height: calc(min(13.5vw, 23vh, 250px) * 0.72 * 1.22);
+  translate: -50% 140%;
+  transition: translate 0.6s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.group[data-open="true"] .memory-stack {
+  translate: -50% 46%;
+}
+.memory-stack-card {
+  position: absolute;
+  left: 50%;
+  bottom: 0;
+  margin-left: calc(min(13.5vw, 23vh, 250px) * -0.36);
+  width: calc(min(13.5vw, 23vh, 250px) * 0.72);
+  cursor: default;
+  filter: drop-shadow(-4px 5px 4px rgba(40, 10, 20, 0.3));
+}
+.memory-stack-card:hover {
+  filter: drop-shadow(-4px 5px 4px rgba(40, 10, 20, 0.3));
+}
+
+/* LinkedIn posts row (AfterChatai.tsx): pauses only while the pointer is on
+   a card itself, not on the empty space around/between/below the cards. */
+.posts-marquee:has(.post-card:hover) .animate-marquee {
+  animation-play-state: paused;
+}
+
+/* Footer table props (Footer.tsx): the telephone grows a little on hover
+   (the computer keeps its size); the telephone
+   shakes while it rings; the computer lights the character with a cool,
+   flickering screen glow. */
+.footer-prop {
+  cursor: pointer;
+  transition: transform 0.25s ease-out;
+  transform-origin: 50% 100%;
+}
+.footer-prop:hover:not(.is-computer) {
+  transform: scale(1.08);
+}
+.footer-prop.is-ringing {
+  animation: phone-ring 0.6s ease-in-out infinite;
+}
+@keyframes phone-ring {
+  0%, 100% { transform: scale(1.08) rotate(0deg); }
+  10% { transform: scale(1.08) rotate(-4deg) translateY(-1px); }
+  20% { transform: scale(1.08) rotate(4deg); }
+  30% { transform: scale(1.08) rotate(-4deg) translateY(-1px); }
+  40% { transform: scale(1.08) rotate(4deg); }
+  50% { transform: scale(1.08) rotate(0deg); }
+}
+.footer-screen-glow {
+  pointer-events: none;
+  /* on his face/chest only (the image's upper middle), brightest on the
+     side facing the screen */
+  background:
+    radial-gradient(ellipse 24% 28% at 44% 18%, rgba(130, 210, 255, 0.95), rgba(120, 205, 255, 0.42) 55%, transparent 85%),
+    radial-gradient(ellipse 32% 24% at 46% 38%, rgba(120, 205, 255, 0.68), transparent 80%);
+  /* soft-light: cool tint + lift on the lit side, darks stay dark */
+  mix-blend-mode: soft-light;
+  opacity: 0;
+  transition: opacity 0.35s ease-out;
+}
+.footer-screen-glow.is-on {
+  opacity: 1;
+  animation: screen-flicker 1.6s steps(1, end) infinite;
+}
+@keyframes screen-flicker {
+  0% { filter: brightness(1); }
+  12% { filter: brightness(0.82); }
+  18% { filter: brightness(1.05); }
+  47% { filter: brightness(0.9); }
+  52% { filter: brightness(1); }
+  80% { filter: brightness(0.86); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .footer-prop.is-ringing,
+  .footer-screen-glow.is-on {
+    animation: none;
+  }
+}
+
+/* Hover tag over the footer's table props (PropTag in Footer.tsx). */
+.prop-tag {
+  transform-origin: 50% 100%;
+  translate: -50% 8px;
+  scale: calc(var(--inv, 1) * 0.92);
+  opacity: 0;
+  transition:
+    opacity 0.2s ease-out,
+    translate 0.25s cubic-bezier(0.2, 0.8, 0.2, 1),
+    scale 0.25s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.prop-tag.is-on {
+  translate: -50% 0;
+  scale: var(--inv, 1);
+  opacity: 1;
+}
+/* Phone: no hover either, so the tags ("Mail" / "WhatsApp") stay visible
+   above their devices, at 14px text (24px base x 0.79 x 0.738). */
+@media (max-width: 424px) {
+  .prop-tag {
+    translate: -50% 0;
+    scale: calc(var(--inv, 1) * 0.738);
+    opacity: 1;
+  }
+}
+/* Tablet: no hover, so the three tags (Mail me / WhatsApp me / My resume)
+   stay visible above their devices all the time. */
+@media (min-width: 425px) and (max-width: 1024px) {
+  /* 30% smaller than on desktop, so the three fit side by side */
+  .prop-tag {
+    translate: -50% 0;
+    scale: calc(var(--inv, 1) * 0.7);
+    opacity: 1;
+  }
+  /* the telephone's tag sits just above the telephone; the resume's is
+     lifted on narrow tablets (under 700px) so the two don't touch */
+  .prop-tag[data-kind="resume"] {
+    translate: -50% -42px;
+  }
+}
+@media (min-width: 700px) and (max-width: 1024px) {
+  /* wider tablets have room: the resume's tag sits just above the resume */
+  .prop-tag[data-kind="resume"] {
+    translate: -50% 0;
+  }
+}
+
+
+/* Wire shelf light controller: LED flashes when the mode changes. */
+.shelf-ctrl-led {
+  animation: shelf-ctrl-led 0.5s ease-out;
+}
+@keyframes shelf-ctrl-led {
+  0% { filter: brightness(2.2); }
+  100% { filter: brightness(1); }
 }

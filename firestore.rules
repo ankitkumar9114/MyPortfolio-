@@ -1,0 +1,75 @@
+rules_version = '2';
+
+// Case studies: anyone can read published ones (the public site); only the
+// portfolio owner, signed in with their email + password, can read
+// everything and write.
+// Keep the email in sync with NEXT_PUBLIC_ADMIN_EMAIL in .env.local.
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // The one admin account: email + password sign-in only.
+    function isAdmin() {
+      return request.auth != null
+        && request.auth.token.firebase.sign_in_provider == "password"
+        && request.auth.token.email == "ankitiwari3105@gmail.com";
+    }
+
+    match /caseStudies/{id} {
+      allow read: if resource.data.published == true || isAdmin();
+      allow create, update: if isAdmin()
+        && request.resource.data.title is string
+        && request.resource.data.body is string
+        && request.resource.data.image is string
+        && request.resource.data.image.size() < 900000
+        && request.resource.data.background is string
+        && request.resource.data.link is string
+        && request.resource.data.order is number
+        && request.resource.data.published is bool;
+      allow delete: if isAdmin();
+    }
+
+    // "Impact in Numbers" stat cards: same idea as case studies.
+    match /impactStats/{id} {
+      allow read: if resource.data.published == true || isAdmin();
+      allow create, update: if isAdmin()
+        && request.resource.data.heading is string
+        && request.resource.data.subtitle is string
+        && request.resource.data.tag is string
+        && request.resource.data.order is number
+        && request.resource.data.published is bool;
+      allow delete: if isAdmin();
+    }
+
+    // TV channels ("Vibe Coding channel") and LinkedIn posts.
+    match /tvChannels/{id} {
+      allow read: if resource.data.published == true || isAdmin();
+      allow create, update: if isAdmin()
+        && request.resource.data.label is string
+        && request.resource.data.video is string
+        && request.resource.data.background is string
+        && request.resource.data.order is number
+        && request.resource.data.published is bool;
+      allow delete: if isAdmin();
+    }
+
+    match /linkedinPosts/{id} {
+      allow read: if resource.data.published == true || isAdmin();
+      allow create, update: if isAdmin()
+        && request.resource.data.urn is string
+        && request.resource.data.height is number
+        && request.resource.data.order is number
+        && request.resource.data.published is bool;
+      allow delete: if isAdmin();
+    }
+
+    // Site settings (settings/contact): public read, admin write.
+    match /settings/{id} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // everything else is closed
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
