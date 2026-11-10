@@ -42,8 +42,15 @@ const manropeFont = Manrope({
 });
 
 export const metadata: Metadata = {
-  title: "Your Name — Portfolio",
-  description: "Designer & developer crafting immersive digital experiences.",
+  title: "Ankit's Portfolio",
+  description: "Ankit Kumar Tiwari — UI/UX and product designer designing and building products on which startups bet.",
+  openGraph: {
+    title: "Ankit's Portfolio",
+    description: "Ankit Kumar Tiwari — UI/UX and product designer designing and building products on which startups bet.",
+    url: "https://www.ankitux.co.in",
+    siteName: "Ankit's Portfolio",
+    type: "website",
+  },
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
