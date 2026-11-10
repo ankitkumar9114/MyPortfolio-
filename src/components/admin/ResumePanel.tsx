@@ -14,9 +14,23 @@ import { Button, Field, IconButton, INPUT, Notice } from "./ui";
 const TEXTAREA = `${INPUT} min-h-[96px] leading-relaxed`;
 const lines = (t: string) => t.split("\n").map((l) => l.trim()).filter(Boolean);
 
-function Card({ title, children }: { title: string; children: ReactNode }) {
+// the editor's sections, in order: the side menu links to each by its id
+const SECTIONS = [
+  ["header", "Header"],
+  ["about", "About Me"],
+  ["work", "Work Experience"],
+  ["links", "Links"],
+  ["education", "Education"],
+  ["certificates", "Certificates"],
+  ["achievements", "Achievements"],
+  ["skills", "Skills"],
+] as const;
+type SectionId = (typeof SECTIONS)[number][0];
+const anchor = (id: SectionId) => `resume-${id}`;
+
+function Card({ id, title, children }: { id: SectionId; title: string; children: ReactNode }) {
   return (
-    <section className="grid gap-4 rounded-2xl bg-white p-6 shadow-sm">
+    <section id={anchor(id)} data-resume-section={id} className="grid scroll-mt-6 gap-4 rounded-2xl bg-white p-6 shadow-sm">
       <h2 className="font-[family-name:var(--font-arvo)] text-xl font-bold">{title}</h2>
       {children}
     </section>
@@ -30,20 +44,30 @@ function ListEditor<T>({
   make,
   label,
   render,
+  addAtTop = false,
 }: {
   items: T[];
   onChange: (items: T[]) => void;
   make: () => T;
   label: string;
   render: (item: T, set: (patch: Partial<T>) => void) => ReactNode;
+  addAtTop?: boolean; // add button above the list, new entries go first
 }) {
   const move = (i: number, d: number) => {
     const next = [...items];
     [next[i], next[i + d]] = [next[i + d], next[i]];
     onChange(next);
   };
+  const addButton = (
+    <div>
+      <Button variant="ghost" onClick={() => onChange(addAtTop ? [make(), ...items] : [...items, make()])}>
+        + Add {label.toLowerCase()}
+      </Button>
+    </div>
+  );
   return (
     <div className="grid gap-3">
+      {addAtTop && addButton}
       {items.map((it, i) => (
         <div key={i} className="grid gap-3 rounded-xl border border-black/10 p-4">
           <div className="flex items-center justify-between">
@@ -65,12 +89,48 @@ function ListEditor<T>({
           {render(it, (patch) => onChange(items.map((x, k) => (k === i ? { ...x, ...patch } : x))))}
         </div>
       ))}
-      <div>
-        <Button variant="ghost" onClick={() => onChange([...items, make()])}>
-          + Add {label.toLowerCase()}
-        </Button>
-      </div>
+      {!addAtTop && addButton}
     </div>
+  );
+}
+
+// side menu: every section of the editor, click to jump; the one in view is
+// highlighted
+function SectionNav() {
+  const [active, setActive] = useState<SectionId>("header");
+  useEffect(() => {
+    const els = SECTIONS.map(([id]) => document.getElementById(anchor(id))).filter(Boolean) as HTMLElement[];
+    const io = new IntersectionObserver(
+      (entries) => {
+        const top = entries.filter((e) => e.isIntersecting).sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top)[0];
+        if (top) setActive((top.target as HTMLElement).dataset.resumeSection as SectionId);
+      },
+      { rootMargin: "0px 0px -70% 0px" },
+    );
+    els.forEach((el) => io.observe(el));
+    return () => io.disconnect();
+  }, []);
+  return (
+    <nav aria-label="Resume sections" className="sticky top-6 hidden self-start lg:block">
+      <p className="mb-2 px-3 text-xs font-semibold uppercase tracking-wide text-black/40">Sections</p>
+      <ul className="grid gap-1">
+        {SECTIONS.map(([id, label]) => (
+          <li key={id}>
+            <a
+              href={`#${anchor(id)}`}
+              onClick={(e) => {
+                e.preventDefault();
+                document.getElementById(anchor(id))?.scrollIntoView({ behavior: "smooth", block: "start" });
+                setActive(id);
+              }}
+              className={`block rounded-lg px-3 py-2 text-sm transition-colors ${active === id ? "bg-[#7A124F]/10 font-semibold text-[#7A124F]" : "text-black/70 hover:bg-black/5"}`}
+            >
+              {label}
+            </a>
+          </li>
+        ))}
+      </ul>
+    </nav>
   );
 }
 
@@ -159,7 +219,9 @@ export default function ResumePanel() {
   };
 
   return (
-    <div className="mx-auto max-w-3xl px-4 py-10 pb-32 sm:px-8">
+    <div className="mx-auto grid max-w-5xl gap-8 px-4 py-10 pb-32 sm:px-8 lg:grid-cols-[180px_minmax(0,1fr)]">
+      {form && <SectionNav />}
+      <div className="min-w-0">
       <div className="mb-8 flex flex-wrap items-end justify-between gap-3">
         <div>
           <h1 className="font-[family-name:var(--font-arvo)] text-3xl font-bold">Resume</h1>
@@ -196,7 +258,7 @@ export default function ResumePanel() {
             }
           }}
         >
-          <Card title="Header">
+          <Card id="header" title="Header">
             <div className="grid gap-4 sm:grid-cols-2">
               <Field label="Name">
                 <input value={form.name} onChange={(e) => set({ name: e.target.value })} className={INPUT} />
@@ -216,18 +278,19 @@ export default function ResumePanel() {
             </div>
           </Card>
 
-          <Card title="About Me">
+          <Card id="about" title="About Me">
             <Field label="About" hint="Wrap words in **double asterisks** to make them bold.">
               <textarea value={form.about} onChange={(e) => set({ about: e.target.value })} className={`${TEXTAREA} min-h-[200px]`} />
             </Field>
           </Card>
 
-          <Card title="Work Experience">
+          <Card id="work" title="Work Experience">
             <ListEditor
               items={form.jobs}
               onChange={(jobs) => set({ jobs })}
               make={() => ({ company: "", meta: "", points: "" })}
               label="Job"
+              addAtTop
               render={(j, setJ) => (
                 <>
                   <div className="grid gap-3 sm:grid-cols-2">
@@ -246,25 +309,25 @@ export default function ResumePanel() {
             />
           </Card>
 
-          <Card title="Links">
+          <Card id="links" title="Links">
             <ListEditor items={form.links} onChange={(links) => set({ links })} make={() => ({ title: "", text: "", link: { text: "", href: "" } })} label="Link" render={(it, s) => <ItemFields item={it} set={s} textLabel="Text (optional)" />} />
           </Card>
 
-          <Card title="Education">
+          <Card id="education" title="Education">
             <ListEditor items={form.education} onChange={(education) => set({ education })} make={() => ({ title: "", text: "" })} label="School" render={(it, s) => <ItemFields item={it} set={s} textLabel="Degree / dates" withLink={false} />} />
           </Card>
 
-          <Card title="Certificates">
+          <Card id="certificates" title="Certificates">
             <Field label="Certificates" hint="One per line.">
               <textarea value={form.certificates} onChange={(e) => set({ certificates: e.target.value })} className={TEXTAREA} />
             </Field>
           </Card>
 
-          <Card title="Achievements">
+          <Card id="achievements" title="Achievements">
             <ListEditor items={form.achievements} onChange={(achievements) => set({ achievements })} make={() => ({ title: "", text: "" })} label="Achievement" render={(it, s) => <ItemFields item={it} set={s} textLabel="Description" />} />
           </Card>
 
-          <Card title="Skills">
+          <Card id="skills" title="Skills">
             <ListEditor items={form.skills} onChange={(skills) => set({ skills })} make={() => ({ title: "", text: "" })} label="Skill group" render={(it, s) => <ItemFields item={it} set={s} textLabel="Skills (separate with ·)" withLink={false} />} />
           </Card>
 
@@ -289,6 +352,7 @@ export default function ResumePanel() {
           </div>
         </form>
       )}
+      </div>
     </div>
   );
 }
