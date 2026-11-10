@@ -130,6 +130,21 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
               window.addEventListener("load", function () {
                 setTimeout(function () { mo.disconnect(); }, 4000);
               });
+              // Errors thrown by browser extensions' own code (e.g. a failed
+              // fetch inside chrome-extension://…) aren't the site's: stop them
+              // here, before the Next.js error overlay's listeners see them.
+              function fromExtension(err) {
+                var s = (err && (err.stack || String(err))) || "";
+                return /(chrome|moz|safari(-web)?)-extension:\\/\\//.test(s);
+              }
+              window.addEventListener("unhandledrejection", function (e) {
+                if (fromExtension(e.reason)) { e.stopImmediatePropagation(); e.preventDefault(); }
+              });
+              window.addEventListener("error", function (e) {
+                if (fromExtension(e.error) || /(chrome|moz|safari(-web)?)-extension:\\/\\//.test(e.filename || "")) {
+                  e.stopImmediatePropagation(); e.preventDefault();
+                }
+              });
             })();
           `}
         </Script>
