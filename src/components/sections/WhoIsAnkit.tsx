@@ -42,8 +42,9 @@ export default function WhoIsAnkit() {
         Who is this Ankit?
       </h2>
       {/* tablet: same line length as every other section divider (10vw) */}
-      <div className="flex w-auto max-w-[637px] items-center gap-4 sm:gap-12 tablet:w-auto tablet:gap-[48px] desktop:w-full desktop:gap-12">
-        <span aria-hidden="true" className="h-[2px] min-w-0 w-[12vw] flex-none bg-white tablet:bg-[#D3D2D2] tablet:w-[10vw] tablet:flex-none desktop:flex-1" />
+      {/* desktop: shorter 120px lines (centred), not stretched across 637px */}
+      <div className="flex w-auto max-w-[637px] items-center gap-4 sm:gap-12 tablet:w-auto tablet:gap-[48px] desktop:w-auto desktop:gap-12">
+        <span aria-hidden="true" className="h-[2px] min-w-0 w-[12vw] flex-none bg-white tablet:bg-[#D3D2D2] tablet:w-[10vw] tablet:flex-none desktop:w-[120px] desktop:flex-none" />
         {/* 20px on tablet; phone/desktop follow the clamp */}
         <span
           className="shrink-0 text-[length:clamp(18px,2vw,28px)] tablet:text-[20px] desktop:text-[length:clamp(18px,2vw,28px)]"
@@ -56,7 +57,7 @@ export default function WhoIsAnkit() {
         >
           about me
         </span>
-        <span aria-hidden="true" className="h-[2px] min-w-0 w-[12vw] flex-none bg-white tablet:w-[10vw] tablet:flex-none desktop:flex-1" />
+        <span aria-hidden="true" className="h-[2px] min-w-0 w-[12vw] flex-none bg-white tablet:w-[10vw] tablet:flex-none desktop:w-[120px] desktop:flex-none" />
       </div>
     </div>
     {/* isolate: the name band's negative z-index stays behind the photo
