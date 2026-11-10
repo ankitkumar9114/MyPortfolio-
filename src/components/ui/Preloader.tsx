@@ -690,7 +690,10 @@ export default function Preloader() {
         <div className="absolute inset-0 flex flex-col items-center justify-center text-white" style={{ zIndex: 10000, textShadow: LOADER_TEXT_SHADOW }}>
           <span className="font-[family-name:var(--font-manrope)] text-[12px] font-bold uppercase leading-none tracking-[0.28em] desktop:text-[14px]">Loading</span>
           <span className="mt-[6px] font-[family-name:var(--font-arvo)] font-bold leading-none" style={{ fontSize: "clamp(40px, 5vw, 72px)" }}>
-            <span data-count-num="">0</span>
+            {/* the boot script counts before React starts */}
+            <span data-count-num="" suppressHydrationWarning>
+              0
+            </span>
             <span className="ml-[2px] align-top text-[0.4em]">%</span>
           </span>
         </div>
