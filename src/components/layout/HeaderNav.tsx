@@ -2,7 +2,7 @@
 
 import type { MouseEvent } from "react";
 import { getLenis } from "@/lib/lenisInstance";
-import { useContactDetails } from "@/lib/contactDetails";
+import { RESUME_PATH } from "@/lib/resume";
 
 // Section links sit two either side of the logo, all five equally spaced.
 // Section links glide there through Lenis (a plain hash jump would fight
@@ -11,10 +11,10 @@ const LEFT = [
   { label: "Work", href: "#work" },
   { label: "About", href: "#about" },
 ];
-// Resume's link comes from the CMS (/admin → Contact details).
-const RIGHT = (resume: string) => [
+// Resume opens the resume page (edited in /admin → Resume) in a new tab.
+const RIGHT = [
   { label: "Contact", href: "#contact" },
-  { label: "Resume", href: resume, external: true },
+  { label: "Resume", href: RESUME_PATH, external: true },
 ];
 
 type NavItem = { label: string; href: string; external?: boolean };
@@ -44,7 +44,6 @@ function NavLink({ item }: { item: NavItem }) {
 }
 
 export default function HeaderNav() {
-  const { resume } = useContactDetails();
   return (
     <nav aria-label="Main" className="absolute inset-y-0 left-[72px] right-[72px] flex items-center justify-between">
       {LEFT.map((item) => (
@@ -64,7 +63,7 @@ export default function HeaderNav() {
         {/* eslint-disable-next-line @next/next/no-img-element -- local decorative SVG, no raster optimization to gain */}
         <img src="/graphics/ankit-logo.svg" alt="" width={35} height={37} className="h-[41.625px] w-[39.375px] select-none" />
       </a>
-      {RIGHT(resume).map((item) => (
+      {RIGHT.map((item) => (
         <NavLink key={item.label} item={item} />
       ))}
     </nav>

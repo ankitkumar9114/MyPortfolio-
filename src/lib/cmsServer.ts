@@ -57,7 +57,7 @@ async function published(collectionId: string): Promise<RawDoc[]> {
   }
 }
 
-async function settingsDoc(id: string): Promise<Record<string, unknown> | null> {
+export async function settingsDoc(id: string): Promise<Record<string, unknown> | null> {
   try {
     const res = await fetch(`${BASE}/settings/${id}?key=${API_KEY}`, { next: { revalidate: REVALIDATE_S } });
     if (!res.ok) return null;
@@ -74,6 +74,12 @@ async function settingsDoc(id: string): Promise<Record<string, unknown> | null> 
 export function caseStudyImageUrl(id: string, updated: unknown) {
   const v = typeof updated === "string" ? Date.parse(updated).toString(36) : "0";
   return `/api/case-study-image/${id}?v=${v}`;
+}
+
+// The resume as saved in the CMS (settings/resume), or null.
+export async function getResumeDoc(): Promise<Record<string, unknown> | null> {
+  if (!PROJECT_ID || !API_KEY) return null;
+  return settingsDoc("resume");
 }
 
 export async function getCmsInitial(): Promise<CmsInitial> {

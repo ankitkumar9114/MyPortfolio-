@@ -1,4 +1,3 @@
-// Ankit's resume (Google Drive, shared "Anyone with the link"): the built-in
-// default for the resume link, until one is saved in /admin → Contact details
-// (see contactDetails.ts).
-export const RESUME_URL = "https://drive.google.com/file/d/1FvZppTlm1ZlrwXMPxwpe2UOcfMo6B6jm/view?usp=sharing";
+// Where every "Resume" button on the site goes: the resume page (/resume),
+// whose content is edited in /admin → Resume.
+export const RESUME_PATH = "/resume";

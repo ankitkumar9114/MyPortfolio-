@@ -7,8 +7,8 @@ import { CONTACT_DOC_ID, DEFAULT_CONTACT, type ContactDetails } from "@/lib/cont
 import { Button, Field, INPUT, Notice } from "./ui";
 
 // "Contact details" section of the CMS: the email / phone / WhatsApp shown
-// on the footer's table (and used by the computer and telephone props), and
-// the resume link used by every "Resume" button on the site.
+// on the footer's table (and used by the computer and telephone props). The
+// resume itself is edited under "Resume".
 export default function ContactPanel() {
   const [form, setForm] = useState<ContactDetails | null>(null);
   const [saved, setSaved] = useState<ContactDetails | null>(null);
@@ -34,9 +34,8 @@ export default function ContactPanel() {
   const digits = (form?.whatsapp ?? "").replace(/\D/g, "");
   const emailOk = !form || /^\S+@\S+\.\S+$/.test(form.email);
   const waOk = digits.length >= 10 && digits.length <= 15;
-  const resumeOk = !form || /^https?:\/\/\S+$/i.test(form.resume.trim());
   const dirty =
-    form && saved && (form.email !== saved.email || form.phone !== saved.phone || form.whatsapp !== saved.whatsapp || form.resume !== saved.resume);
+    form && saved && (form.email !== saved.email || form.phone !== saved.phone || form.whatsapp !== saved.whatsapp);
   const set = (k: keyof ContactDetails, v: string) => {
     setStatus("");
     setForm((f) => (f ? { ...f, [k]: v } : f));
@@ -46,8 +45,8 @@ export default function ContactPanel() {
     <div className="mx-auto max-w-3xl px-4 py-10 sm:px-8">
       <h1 className="font-[family-name:var(--font-arvo)] text-3xl font-bold">Contact details</h1>
       <p className="mb-8 text-sm text-black/60">
-        Shown on the footer&apos;s table: the email and phone lines, the computer (“Mail me”) and the telephone (“WhatsApp me”). The resume
-        link is used by every “Resume” button on the site.
+        Shown on the footer&apos;s table: the email and phone lines, the computer (“Mail me”) and the telephone (“WhatsApp me”). The resume is
+        edited under “Resume”.
       </p>
 
       {loadError && (
@@ -63,11 +62,11 @@ export default function ContactPanel() {
           className="grid gap-5 rounded-2xl bg-white p-6 shadow-sm"
           onSubmit={async (e) => {
             e.preventDefault();
-            if (!emailOk || !waOk || !resumeOk) return;
+            if (!emailOk || !waOk) return;
             setStatus("saving");
             setError("");
             try {
-              const data = { email: form.email.trim(), phone: form.phone.trim(), whatsapp: digits, resume: form.resume.trim() };
+              const data = { email: form.email.trim(), phone: form.phone.trim(), whatsapp: digits };
               await setDoc(doc(db()!, "settings", CONTACT_DOC_ID), { ...data, updatedAt: serverTimestamp() });
               setForm(data);
               setStatus("saved");
@@ -95,36 +94,6 @@ export default function ContactPanel() {
             </div>
           </Field>
 
-          <Field
-            label="Resume link"
-            hint={
-              resumeOk
-                ? "Opened by the menu's “Resume”, the resume on the footer's table and the bottom bar on phone/tablet. For Google Drive, share the file as “Anyone with the link”."
-                : "Enter a full link starting with https://"
-            }
-          >
-            <div className="flex gap-2">
-              <input
-                type="url"
-                required
-                value={form.resume}
-                placeholder="https://drive.google.com/file/d/…/view"
-                onChange={(e) => set("resume", e.target.value)}
-                className={INPUT}
-              />
-              {resumeOk && form.resume.trim() && (
-                <a
-                  href={form.resume.trim()}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="shrink-0 rounded-lg border border-black/15 px-3 py-2 text-sm font-semibold hover:bg-black/5"
-                >
-                  Open
-                </a>
-              )}
-            </div>
-          </Field>
-
           {error && <Notice tone="error">{error}</Notice>}
 
           <div className="flex items-center justify-between gap-3">
@@ -135,7 +104,7 @@ export default function ContactPanel() {
                   Discard changes
                 </Button>
               )}
-              <Button type="submit" disabled={!dirty || status === "saving" || !emailOk || !waOk || !resumeOk}>
+              <Button type="submit" disabled={!dirty || status === "saving" || !emailOk || !waOk}>
                 {status === "saving" ? "Saving…" : "Save"}
               </Button>
             </div>

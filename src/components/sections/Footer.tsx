@@ -1,6 +1,7 @@
 "use client";
 
 import { useContactDetails, type ContactDetails } from "@/lib/contactDetails";
+import { RESUME_PATH } from "@/lib/resume";
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { motion, useMotionValue, useReducedMotion, useScroll, useSpring, useTransform } from "framer-motion";
 import { playComputerHover, playPhoneRing } from "./footerSounds";
@@ -75,14 +76,14 @@ function subscribePhone(cb: () => void) {
 const TAG_SIDE_PAD = 22; // px (pre-scale) of space left/right of the label
 const TAG_SIZE = 0.79; // hover tag size vs the Figma frame (79%)
 // What the table props do: computer -> email, telephone -> WhatsApp chat,
-// resume -> the resume on Google Drive (same link as the header's "Resume").
+// resume -> the resume page (same as the header's "Resume").
 // Contact details come from the CMS (/admin → Contact details).
 type PropKind = "computer" | "telephone" | "resume";
-function contactLinks({ email, whatsapp, resume }: ContactDetails): Record<PropKind, { label: string; href: string; aria: string; newTab: boolean }> {
+function contactLinks({ email, whatsapp }: ContactDetails): Record<PropKind, { label: string; href: string; aria: string; newTab: boolean }> {
   return {
     computer: { label: "Mail me", href: `mailto:${email}`, aria: `Email Ankit (${email})`, newTab: false },
     telephone: { label: "WhatsApp me", href: `https://wa.me/${whatsapp}`, aria: "Chat with Ankit on WhatsApp", newTab: true },
-    resume: { label: "My resume", href: resume, aria: "Open Ankit's resume", newTab: true },
+    resume: { label: "My resume", href: RESUME_PATH, aria: "Open Ankit's resume", newTab: true },
   };
 }
 

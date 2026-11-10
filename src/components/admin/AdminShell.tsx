@@ -22,6 +22,7 @@ export const ADMIN_SECTIONS = [
   { href: `${ADMIN_BASE}/vibe-coding-channel`, label: "Vibe Coding channel", icon: "M4 6h16v12H4zM10 9.5v5l4.5-2.5z" },
   { href: `${ADMIN_BASE}/linkedin`, label: "LinkedIn", icon: "M5 9v10M5 5v.01M10 19v-6a3 3 0 016 0v6M10 9v10" },
   { href: `${ADMIN_BASE}/contact-details`, label: "Contact details", icon: "M4 6h16v12H4zM4 7l8 6 8-6" },
+  { href: `${ADMIN_BASE}/resume`, label: "Resume", icon: "M14 3H7a2 2 0 00-2 2v14a2 2 0 002 2h10a2 2 0 002-2V8zM14 3v5h5M9 13h6M9 17h4" },
 ] as const;
 
 // Gate for every /admin page: Firebase sign-in (admin email only), then the

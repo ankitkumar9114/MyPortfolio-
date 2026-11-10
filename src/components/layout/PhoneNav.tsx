@@ -3,6 +3,7 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { getLenis } from "@/lib/lenisInstance";
 import { useContactDetails } from "@/lib/contactDetails";
+import { RESUME_PATH } from "@/lib/resume";
 
 // Phone and tablet navigation: a bar fixed to the bottom of the screen
 // (440px wide at most, centered, on tablet) (same frosted,
@@ -97,7 +98,8 @@ function NavButton({ label, active, onClick, href, children }: { label: string; 
 
 export default function PhoneNav() {
   const [open, setOpen] = useState(false);
-  const { email, phone, whatsapp, resume } = useContactDetails();
+  const { email, phone, whatsapp } = useContactDetails();
+  const resume = RESUME_PATH;
 
   // close the contact panel on any scroll or Escape
   useEffect(() => {
