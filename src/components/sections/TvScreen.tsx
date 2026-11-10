@@ -185,13 +185,14 @@ export function TvPicture({
 // A proxied Drive video, downloaded once as a whole (one plain request, so
 // the CDN can cache it; see /api/drive-video) and played from memory, where
 // seeking and looping need no more requests. Shared across channel switches.
-// Falls back to streaming the URL if the download fails.
+// Falls back to streaming the URL if the download fails. Only starts once
+// the TV is switched on (`enabled`), so loading the page never pulls a video.
 const videoBlobs = new Map<string, Promise<string>>();
-function useCachedVideoSrc(src: string) {
+function useCachedVideoSrc(src: string, enabled: boolean) {
   const proxied = src.startsWith("/api/drive-video");
   const [ready, setReady] = useState<{ for: string; url: string } | null>(null);
   useEffect(() => {
-    if (!proxied) return;
+    if (!proxied || !enabled) return;
     let alive = true;
     let p = videoBlobs.get(src);
     if (!p) {
@@ -208,13 +209,13 @@ function useCachedVideoSrc(src: string) {
     return () => {
       alive = false;
     };
-  }, [src, proxied]);
+  }, [src, proxied, enabled]);
   if (!proxied) return src;
   return ready?.for === src ? ready.url : undefined;
 }
 
 function ChannelVideo({ src: rawSrc, on, playing, volume }: { src: string; on: boolean; playing: boolean; volume: number }) {
-  const src = useCachedVideoSrc(rawSrc);
+  const src = useCachedVideoSrc(rawSrc, on);
   const ref = useRef<HTMLVideoElement>(null);
   useEffect(() => {
     const v = ref.current;
