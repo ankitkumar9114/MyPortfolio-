@@ -3,6 +3,7 @@ import path from "node:path";
 import { Document, Font, Image, Link, Page, StyleSheet, Text, View, renderToBuffer } from "@react-pdf/renderer";
 import { boldRuns, parseResume, type ResumeItem } from "@/data/resume";
 import { getResumeDoc } from "@/lib/cmsServer";
+import { fillYears } from "@/lib/experience";
 
 // The resume as a downloadable PDF (the "Download PDF" button on /resume),
 // from the same CMS content as the page (settings/resume). Real text in the
@@ -114,7 +115,8 @@ function List({ items, gap, render }: { items: ResumeItem[]; gap: number; render
 
 export async function GET() {
   registerFonts();
-  const r = parseResume(await getResumeDoc());
+  const saved = parseResume(await getResumeDoc());
+  const r = { ...saved, experience: fillYears(saved.experience), about: fillYears(saved.about) };
   const border = fs.readFileSync(path.join(ASSETS, "resume-pdf", "border-a4.png"));
 
   const doc = (

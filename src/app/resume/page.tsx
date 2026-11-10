@@ -5,6 +5,7 @@ import OrnateFrame from "@/components/resume/OrnateFrame";
 import PrintButton from "@/components/resume/PrintButton";
 import { boldRuns, parseResume, type ResumeItem } from "@/data/resume";
 import { getResumeDoc } from "@/lib/cmsServer";
+import { experienceYears, fillYears } from "@/lib/experience";
 
 // The resume page, built from the Figma design "Resume – Ankit Kumar Tiwari
 // (site theme)" (709:914): a 900px cream sheet inside the hero's border,
@@ -16,10 +17,12 @@ import { getResumeDoc } from "@/lib/cmsServer";
 // content comes from the CMS (settings/resume), refreshed at most once a minute
 export const revalidate = 60;
 
-export const metadata: Metadata = {
-  title: "Resume — Ankit Kumar Tiwari",
-  description: "Ankit Kumar Tiwari, UI/UX Designer with 3+ years of experience: work, skills, education and achievements.",
-};
+export function generateMetadata(): Metadata {
+  return {
+    title: "Resume — Ankit Kumar Tiwari",
+    description: `Ankit Kumar Tiwari, UI/UX Designer with ${experienceYears()} years of experience: work, skills, education and achievements.`,
+  };
+}
 
 const RED = "#960D1A";
 const INK = "#2B1B1B";
@@ -87,7 +90,9 @@ function Item({ item, gap = 2, muted = false }: { item: ResumeItem; gap?: number
 }
 
 export default async function ResumePage() {
-  const r = parseResume(await getResumeDoc());
+  const saved = parseResume(await getResumeDoc());
+  // {years} -> current years of experience (e.g. "3+", "3.5")
+  const r = { ...saved, experience: fillYears(saved.experience), about: fillYears(saved.about) };
   return (
     <main className="resume-page relative min-h-screen overflow-hidden bg-[radial-gradient(circle_at_50%_30%,_#960D1A_0%,_#4D050C_100%)] px-4 pb-16 pt-6 tablet:px-8 tablet:pt-8">
       {/* the hero's damask pattern, soft-light over the red */}

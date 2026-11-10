@@ -266,7 +266,7 @@ export default function ResumePanel() {
               <Field label="Role">
                 <input value={form.role} onChange={(e) => set({ role: e.target.value })} className={INPUT} />
               </Field>
-              <Field label="Experience" hint="Shown after the role, e.g. “3+ Years of Experience”. Leave empty to hide.">
+              <Field label="Experience" hint="Shown after the role. {years} fills in your current years of experience automatically (e.g. 3+, 3.5). Leave empty to hide.">
                 <input value={form.experience} onChange={(e) => set({ experience: e.target.value })} className={INPUT} />
               </Field>
               <Field label="Email">
@@ -279,7 +279,7 @@ export default function ResumePanel() {
           </Card>
 
           <Card id="about" title="About Me">
-            <Field label="About" hint="Wrap words in **double asterisks** to make them bold.">
+            <Field label="About" hint="Wrap words in **double asterisks** to make them bold. {years} fills in your current years of experience.">
               <textarea value={form.about} onChange={(e) => set({ about: e.target.value })} className={`${TEXTAREA} min-h-[200px]`} />
             </Field>
           </Card>

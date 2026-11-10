@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState, useSyncExternalStore, type CSSProperties } from "react";
 import { motion, useScroll, useTransform, type MotionValue } from "framer-motion";
+import { fillYears } from "@/lib/experience";
 
 const PHOTO_GAP = 96; // heading block -> sunflower photo (32px on phone, 40px on tablet)
 // photo -> intro paragraph and intro paragraph -> unrolling chatai: 80px on
@@ -79,7 +80,7 @@ export default function WhoIsAnkit() {
     {/* phone 28px / tablet 48px below the photo (instead of the section gap); tablet: a
         bigger 36px paragraph */}
     <ScrollHighlightText
-      text={INTRO_TEXT}
+      text={fillYears(INTRO_TEXT)}
       className="mt-[28px] text-[length:clamp(24px,3.9vw,56px)] tablet:mt-[48px] tablet:text-[36px] desktop:mt-[var(--para-gap)] desktop:text-[length:clamp(24px,3.9vw,56px)]"
       style={{ ["--para-gap" as string]: `${gap}px` }}
     />
@@ -88,7 +89,7 @@ export default function WhoIsAnkit() {
 }
 
 const INTRO_TEXT =
-  "From early-stage startups to enterprise products, I've spent 3+ years designing digital experiences across B2B and B2C. I've managed the end-to-end design of 5 diverse products at IQOL, built scalable design systems, and improved workflows that reduced lead entry time by 65%. My work spans SaaS platforms, CRM systems, real estate products, and digital experiences for brands like Pidilite, Tata Neu, and SBI Realty. I combine UX research, interaction design, and prototyping with an engineering background to create solutions that balance user needs with business goals. I also enjoy vibe coding, turning design concepts into functional products by building, testing, and refining interfaces myself. I focus on simplifying complex workflows and creating intuitive, production-ready experiences.";
+  "From early-stage startups to enterprise products, I've spent {years} years designing digital experiences across B2B and B2C. I've managed the end-to-end design of 5 diverse products at IQOL, built scalable design systems, and improved workflows that reduced lead entry time by 65%. My work spans SaaS platforms, CRM systems, real estate products, and digital experiences for brands like Pidilite, Tata Neu, and SBI Realty. I combine UX research, interaction design, and prototyping with an engineering background to create solutions that balance user needs with business goals. I also enjoy vibe coding, turning design concepts into functional products by building, testing, and refining interfaces myself. I focus on simplifying complex workflows and creating intuitive, production-ready experiences.";
 
 // Scroll-driven read-along: every word starts faint (black at 20%, so it
 // reads as a deeper pink) and turns white the moment it crosses a fixed

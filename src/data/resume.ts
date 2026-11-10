@@ -12,7 +12,7 @@ export type Resume = {
   experience: string;
   email: string;
   phone: string;
-  about: string; // **double asterisks** mark bold phrases
+  about: string; // **double asterisks** mark bold phrases; {years} = current years of experience
   jobs: ResumeJob[];
   links: ResumeItem[];
   education: ResumeItem[];
@@ -26,11 +26,11 @@ export const RESUME_DOC_ID = "resume";
 export const DEFAULT_RESUME: Resume = {
   name: "Ankit Kumar Tiwari",
   role: "UI/UX Designer",
-  experience: "3+ Years of Experience",
+  experience: "{years} Years of Experience", // {years}: worked out from the career start (lib/experience.ts)
   email: "ankitiwari3105@gmail.com",
   phone: "+91 7024396102",
   about:
-    "**An engineer** by education who found his passion in design, I transitioned into Product Design to combine technology, creativity, and problem-solving. I am a creative and **user-focused** Product Designer with **3+ years** of experience designing digital products for startups and enterprise clients across **B2B and B2C domains**. Currently working as **Head of Design**, independently **building 12+ digital products** from concept to launch using **vibe coding**. Experienced in product building, **UX research**, **user-centred design**, **wireframing**, **prototyping**, **interaction design**, and **design systems**. I work closely with business leaders and managers to define product strategy, make design decisions, and **align user needs with business goals**. My engineering background helps me **collaborate effectively with developers** and turn ideas into practical, scalable, and user-friendly digital products.",
+    "**An engineer** by education who found his passion in design, I transitioned into Product Design to combine technology, creativity, and problem-solving. I am a creative and **user-focused** Product Designer with **{years} years** of experience designing digital products for startups and enterprise clients across **B2B and B2C domains**. Currently working as **Head of Design**, independently **building 12+ digital products** from concept to launch using **vibe coding**. Experienced in product building, **UX research**, **user-centred design**, **wireframing**, **prototyping**, **interaction design**, and **design systems**. I work closely with business leaders and managers to define product strategy, make design decisions, and **align user needs with business goals**. My engineering background helps me **collaborate effectively with developers** and turn ideas into practical, scalable, and user-friendly digital products.",
   jobs: [
     {
       company: "alldoors",
