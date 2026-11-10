@@ -39,7 +39,18 @@ export function bootWaves(cfg: BootConfig) {
         resolve(null);
       }
     };
-    img.decode().then(go, go);
+    // wait until the frame's own picture (the SVG <image>) has loaded too,
+    // then two frames so it's actually on screen, so waves and the counter
+    // never show over an empty frame
+    const art = document.querySelector("#preloader-scene [data-screen] [data-art]");
+    const artLoaded = new Promise<void>((res) => {
+      if (!art) return res();
+      art.addEventListener("load", () => res(), { once: true });
+      art.addEventListener("error", () => res(), { once: true });
+    });
+    Promise.all([img.decode().catch(() => undefined), artLoaded]).then(() =>
+      requestAnimationFrame(() => requestAnimationFrame(go)),
+    );
     setTimeout(go, 2500); // never wait longer than this for the artwork
   });
 
@@ -68,6 +79,7 @@ export function bootWaves(cfg: BootConfig) {
   box.style.top = m.d * by + m.f - hostRect.top + "px";
   box.style.width = bw * m.a + "px";
   box.style.height = bh * m.d + "px";
+  box.style.opacity = "1"; // the artwork is on screen now
 
   const band = (a: number, p: number) => {
     const x0 = G.x0 - 2 * p, x1 = G.x1 + p, depth = G.bottom - G.top + 3 * a + 20;
@@ -116,6 +128,18 @@ export function bootWaves(cfg: BootConfig) {
       { duration: (w.period / w.flow) * 1000, iterations: Infinity, easing: "linear" },
     ).startTime = flowStart;
   }
+  // the loading counter creeps up gently until Preloader takes it over
+  // (it sets window.__plCountTaken and carries on from this value)
+  const num = host.querySelector("[data-count-num]");
+  const w1 = window as unknown as { __plCountTaken?: boolean };
+  let pct = 0;
+  const creep = () => {
+    if (w1.__plCountTaken || !num) return;
+    pct += (40 - pct) * 0.012;
+    num.textContent = String(Math.floor(pct));
+    requestAnimationFrame(creep);
+  };
+  requestAnimationFrame(creep);
   return { flowStart, starts, geom: G.key };
   }
 }

@@ -110,6 +110,9 @@ function fitMode(g: Geom) {
 // is parsed, so the right artwork loads (and only that one) and shows at its
 // final size from the very first frame, before the page's scripts run.
 const SETUP_SCRIPT = `(function(){var s=document.getElementById("preloader-scene");if(!s)return;var G=${JSON.stringify(GEOMS)};var w=innerWidth,h=innerHeight;var g=w<=424?G.phone:w<=1024&&h>=w?G.tablet:G.wide;var r=w/h/(g.w/g.h);s.setAttribute("preserveAspectRatio",g.key!=="wide"||(r>0.8&&r<1.25)?"none":"xMidYMid slice");s.setAttribute("viewBox","0 0 "+g.w+" "+g.h);s.setAttribute("data-geom",g.key);s.querySelectorAll("[data-art]").forEach(function(e){e.setAttribute("href",g.bg);e.setAttribute("width",g.w);e.setAttribute("height",g.h)})})();`;
+// the loading counter's outline + shadow: readable on light and dark colours
+const LOADER_TEXT_SHADOW =
+  "0 0 1px rgba(40,10,20,0.9), 1px 1px 0 rgba(40,10,20,0.75), -1px 1px 0 rgba(40,10,20,0.75), 1px -1px 0 rgba(40,10,20,0.75), -1px -1px 0 rgba(40,10,20,0.75), 0 2px 10px rgba(40,10,20,0.55)";
 // bigger than any of the artworks: the backdrop colour and clip before the
 // effect fits them to the screen
 const BIG = 2000;
@@ -324,12 +327,41 @@ export default function Preloader() {
     // ones already rising finish filling the frame, and then the site wave
     // rises.
     let ready = false;
+    // The loading percentage in the frame's centre: real progress (what the
+    // loader has finished out of what it waits for), shown climbing smoothly
+    // and always reaching 100 before the site rises in. Written straight
+    // into the element, so updating it never re-renders React.
+    let total = 0;
+    let doneCount = 0;
+    let shownPct = 0;
+    let lastPctAt = 0;
+    const countEl = overlayRef.current?.parentElement?.querySelector<HTMLElement>("[data-count-num]");
+    let countTaken = false;
+    const updateCount = (now: number) => {
+      if (!countTaken) {
+        // take over from the boot script's counter, from where it got to
+        countTaken = true;
+        (window as unknown as { __plCountTaken?: boolean }).__plCountTaken = true;
+        shownPct = Number(countEl?.textContent) || 0;
+      }
+      const target = ready ? 100 : total ? Math.min(95, (doneCount / total) * 100) : 0;
+      const dt = lastPctAt ? Math.min(0.1, (now - lastPctAt) / 1000) : 0;
+      lastPctAt = now;
+      // ease towards the target, but always keep creeping a little while
+      // loading (so it never looks stuck), and race to 100 once ready
+      if (target <= shownPct) return; // never counts down
+      shownPct = Math.min(target, shownPct + Math.max((target - shownPct) * dt * (ready ? 6 : 2.5), (ready ? 60 : 4) * dt));
+      const v = String(Math.floor(shownPct));
+      if (countEl && countEl.textContent !== v) countEl.textContent = v;
+    };
     // The boot script (preloaderBoot) starts the first round of waves before
     // React is up, once the artwork has loaded; wait for it and carry on with
     // those waves (or start afresh if it couldn't, or the screen changed).
     type Boot = { flowStart: number; starts: number[]; geom: string } | null;
     const bootPromise = (window as unknown as { __plBoot?: Promise<Boot> }).__plBoot;
     let booting = !!bootPromise;
+    // no boot script (it didn't run): show the waves straight away
+    if (!bootPromise && wavesEl) wavesEl.style.opacity = "1";
     let flowStart = document.timeline.currentTime as number; // the glide's phase
     const layers = wavesEl ? Array.from(wavesEl.querySelectorAll<HTMLElement>("[data-wave]")) : [];
     const layerWave = new Array<number>(WAVE_POOL).fill(-1); // wave each layer shows
@@ -346,6 +378,7 @@ export default function Preloader() {
     const starts: number[] = [];
     bootPromise?.then((b) => {
       booting = false;
+      if (wavesEl) wavesEl.style.opacity = "1"; // the artwork is on screen
       if (b && b.geom === pickGeom().key) {
         flowStart = b.flowStart;
         starts.push(...b.starts);
@@ -393,6 +426,7 @@ export default function Preloader() {
     fitAll();
     window.addEventListener("resize", fitAll);
     const draw = () => {
+      updateCount(document.timeline.currentTime as number);
       if (booting) return;
       const now = document.timeline.currentTime as number;
       const n = starts.length;
@@ -440,10 +474,13 @@ export default function Preloader() {
     const seen = new Set<string>();
     const tasks: Promise<void>[] = [];
     const track = (p: Promise<unknown>) => {
+      total += 1;
       const t = p.then(
         () => undefined,
         () => undefined,
-      );
+      ).then(() => {
+        doneCount += 1;
+      });
       tasks.push(t);
       return t;
     };
@@ -628,7 +665,9 @@ export default function Preloader() {
         data-waves=""
         aria-hidden="true"
         className="pointer-events-none absolute left-0 top-0 h-0 w-0 overflow-hidden"
-        style={{ clipPath: "url(#preloader-space-unit)", WebkitClipPath: "url(#preloader-space-unit)" }}
+        // opacity 0 until the artwork is on screen (preloaderBoot / the
+        // effect reveal it), so the waves and counter never show early
+        style={{ clipPath: "url(#preloader-space-unit)", WebkitClipPath: "url(#preloader-space-unit)", opacity: 0 }}
         suppressHydrationWarning
       >
         {Array.from({ length: WAVE_POOL }, (_, i) => (
@@ -644,6 +683,17 @@ export default function Preloader() {
             </div>
           </div>
         ))}
+        {/* "LOADING" + the percentage, centred in the frame, above the waves.
+            White with a dark outline and shadow so it reads on every wave
+            colour and on the empty frame. Hidden with the waves at the
+            reveal. */}
+        <div className="absolute inset-0 flex flex-col items-center justify-center text-white" style={{ zIndex: 10000, textShadow: LOADER_TEXT_SHADOW }}>
+          <span className="font-[family-name:var(--font-manrope)] text-[12px] font-bold uppercase leading-none tracking-[0.28em] desktop:text-[14px]">Loading</span>
+          <span className="mt-[6px] font-[family-name:var(--font-arvo)] font-bold leading-none" style={{ fontSize: "clamp(40px, 5vw, 72px)" }}>
+            <span data-count-num="">0</span>
+            <span className="ml-[2px] align-top text-[0.4em]">%</span>
+          </span>
+        </div>
       </div>
       {/* fits the artwork to this screen (see fitBg) as soon as it's parsed,
           so it shows at its final size from the very first frame instead of
