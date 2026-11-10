@@ -83,7 +83,7 @@ function collectImageUrls(): string[] {
 type Geom = { key: keyof typeof FRAME_OUTLINES; bg: string; w: number; h: number; top: number; bottom: number; x0: number; x1: number; cx: number; cy: number; r: number };
 const GEOMS: Record<keyof typeof FRAME_OUTLINES, Geom> = {
   // Ornate Purple Truck-Art Medallion: laptops, desktops, landscape tablets
-  wide: { key: "wide", bg: "/images/loader-bg.webp", w: 1585, h: 992, top: 318, bottom: 677, x0: 560, x1: 1025, cx: 792, cy: 498, r: 154 },
+  wide: { key: "wide", bg: "/images/loader-bg.webp", w: 1585, h: 992, top: 317, bottom: 676, x0: 585, x1: 998, cx: 791, cy: 496, r: 154 },
   // "tablet loader": portrait tablets
   tablet: { key: "tablet", bg: "/images/loader-bg-tablet.webp", w: 1024, h: 1536, top: 589, bottom: 1005, x0: 269, x1: 755, cx: 512, cy: 797, r: 170 },
   // "mobile laoder": phones
