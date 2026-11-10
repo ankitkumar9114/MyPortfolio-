@@ -4,7 +4,6 @@ import { useCallback, useEffect, useRef, useState, useSyncExternalStore, type Re
 import { motion, useMotionValue, useMotionValueEvent, useReducedMotion, useScroll, useTransform, type Variants } from "framer-motion";
 import { getLenis } from "@/lib/lenisInstance";
 // Chatai section commented out (replaced by the wire shelf):
-// import ChataiUnroll, { type ChataiPrint } from "./ChataiUnroll";
 // import FanShadow from "./FanShadow";
 // import FridgeStickers from "./FridgeStickers";
 import WireShelf from "./WireShelf";
@@ -849,7 +848,6 @@ export default function TvOnCabinet({ children }: { children: ReactNode }) {
           style={{ minHeight: `${AFTER_ZOOM_VH * 100}vh`, paddingTop: Number.isFinite(geo.headingTop) ? Math.max(0, geo.headingTop) : 0, paddingBottom: AFTER_CONTENT_BOTTOM }}
         >
           <WhoIsAnkit />
-          {/* <TvChatai panelRef={panelRef} /> */}
           <TvShelf />
         </div>
       )}
@@ -919,38 +917,6 @@ function TvShelf() {
     </div>
   );
 }
-
-// --- Chatai section, commented out (replaced by TvShelf above) ---
-// // The unrolling chatai after the "Who is this Ankit?" section, on the same
-// // pink panel: spaced and timed from that section's paragraph (its gap and
-// // highlight line), with a seamless copy of the panel behind its pinned frame.
-// function TvChatai({ panelRef }: { panelRef: RefObject<HTMLDivElement | null> }) {
-//   const gap = useSectionGap();
-//   return (
-//     <ChataiUnroll
-//       style={{ marginTop: gap }}
-//       startLine={HIGHLIGHT_LINE}
-//       startGapPx={gap}
-//       backdrop={{ panelRef, background: UNDER_CLOTH_BG, fabricSrc: FABRIC_SRC, fabricTilePx: FABRIC_TILE_PX, fabricOpacity: FABRIC_OPACITY }}
-//       print={FRIDGE_PRINT}
-//     >
-//       {/* stickers under the fan layer, so the fan's shadow passes over them */}
-//       <FridgeStickers />
-//       <FanShadow />
-//     </ChataiUnroll>
-//   );
-// }
-//
-// // Printed into the chatai's white middle (Figma "Frame 44"): Arvo 68px
-// // uppercase navy title, "My Memories" in Merriweather 28px with rules, 80%
-// // opacity. Module-level so the chatai's scene isn't rebuilt every render.
-// const FRIDGE_PRINT: ChataiPrint = {
-//   title: "My Fridge Magnet Collection",
-//   subtitle: "My Memories",
-//   color: "#012755",
-//   subColor: "#325175",
-//   opacity: 0.8,
-// };
 
 // Dev-only live tuning panel (never rendered in a production build).
 // Drag the sliders, then share the numbers to make them the defaults.
