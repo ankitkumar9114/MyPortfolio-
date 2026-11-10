@@ -82,7 +82,7 @@ function collectImageUrls(): string[] {
 type Geom = { key: keyof typeof FRAME_OUTLINES; bg: string; w: number; h: number; top: number; bottom: number; x0: number; x1: number; cx: number; cy: number; r: number };
 const GEOMS: Record<keyof typeof FRAME_OUTLINES, Geom> = {
   // Ornate Purple Truck-Art Medallion: laptops, desktops, landscape tablets
-  wide: { key: "wide", bg: "/images/loader-bg.webp", w: 1585, h: 992, top: 320, bottom: 675, x0: 560, x1: 1025, cx: 792, cy: 498, r: 154 },
+  wide: { key: "wide", bg: "/images/loader-bg.webp", w: 1585, h: 992, top: 318, bottom: 677, x0: 560, x1: 1025, cx: 792, cy: 498, r: 154 },
   // "tablet loader": portrait tablets
   tablet: { key: "tablet", bg: "/images/loader-bg-tablet.webp", w: 1024, h: 1536, top: 589, bottom: 1005, x0: 269, x1: 755, cx: 512, cy: 797, r: 170 },
   // "mobile laoder": phones
@@ -112,8 +112,6 @@ const SETUP_SCRIPT = `(function(){var s=document.getElementById("preloader-scene
 // bigger than any of the artworks: the backdrop colour and clip before the
 // effect fits them to the screen
 const BIG = 2000;
-// parked far below the scene until its turn, so a wave can't show early
-const PARKED = "translate(0 100000)";
 // Colours that rise through the frame one after another (all from the truck
 // art: yellow, orange, pink, violet, blue, green); each starts once the one before
 // it has filled a quarter of the space, and all reach the top when loading
@@ -145,16 +143,33 @@ const SITE_WAVE = { amp: 11, period: 220, flow: 100 };
 const SITE_FILL_S = 1.5; // the site wave's rise through the frame
 const ZOOM_S = 1.3; // the window growing to full screen
 
-// A wavy band across the frame's space: a smooth sine top edge (period `p`,
-// height `a`) along y=0, sampled finely, filled far down below it. It starts
-// two periods left of the space, so shifting it right by up to one period
-// (the flow) always keeps the space covered.
-function wavePath(g: Geom, a: number, p: number) {
+// A colour wave: a smooth sine top edge (period `p`, height `a`) along y=0,
+// sampled finely, filled down to `depth` below it (enough to reach the
+// frame's bottom when the edge is at its top). It starts two periods left of
+// the space, so shifting it right by up to one period (the flow) always
+// keeps the space covered. Returns the path and its box (scene units).
+function waveBand(g: Geom, a: number, p: number) {
   const x0 = g.x0 - 2 * p;
   const x1 = g.x1 + p;
+  const depth = g.bottom - g.top + 3 * a + 20;
   const pts: string[] = [];
   for (let x = x0; x <= x1; x += 6) pts.push(`${x.toFixed(1)} ${(-a * Math.sin(((x - x0) / p) * 2 * Math.PI)).toFixed(2)}`);
-  return `M${pts.join(" L")} L${x1} ${g.h} L${x0} ${g.h} Z`;
+  return { d: `M${pts.join(" L")} L${x1} ${depth} L${x0} ${depth} Z`, x: x0, y: -a - 1, w: x1 - x0, h: depth + a + 1 };
+}
+// the outline's bounding box, and the outline in that box's 0-1 units (a
+// clip path that stretches with the element it clips)
+function outlineBox(key: Geom["key"]) {
+  const nums = FRAME_OUTLINES[key].match(/-?[\d.]+/g)!.map(Number);
+  const xs = nums.filter((_, i) => i % 2 === 0);
+  const ys = nums.filter((_, i) => i % 2 === 1);
+  const x = Math.min(...xs), y = Math.min(...ys);
+  const w = Math.max(...xs) - x, h = Math.max(...ys) - y;
+  let i = 0;
+  const unit = FRAME_OUTLINES[key].replace(/-?[\d.]+/g, (n) => {
+    const v = i++ % 2 === 0 ? (Number(n) - x) / w : (Number(n) - y) / h;
+    return v.toFixed(5);
+  });
+  return { x, y, w, h, unit };
 }
 // The same wavy edge, filled far up above it instead: the part of the
 // frame's space the site wave hasn't reached yet (a clip path).
@@ -179,7 +194,7 @@ const waveY = (g: Geom, level: number, a: number) => g.bottom + a - level * (g.b
 export default function Preloader() {
   const [done, setDone] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
-  const waveRefs = useRef<(SVGGElement | null)[]>([]);
+  const wavesRef = useRef<HTMLDivElement>(null);
   const overlayRef = useRef<SVGSVGElement>(null);
   const skip = useRef(isReducedMotion());
 
@@ -214,7 +229,6 @@ export default function Preloader() {
         el.setAttribute("width", String(G.w));
         el.setAttribute("height", String(G.h));
       });
-      waveRefs.current.forEach((g, i) => g?.querySelector("path")?.setAttribute("d", wavePath(G, WAVES[i % WAVES.length].amp, WAVES[i % WAVES.length].period)));
       const siteWave = bg?.querySelector("[data-site-wave]");
       siteWave?.setAttribute("d", aboveWavePath(G, SITE_WAVE.amp, SITE_WAVE.period));
       siteWave?.setAttribute("transform", `translate(0 ${waveY(G, 0, SITE_WAVE.amp)})`);
@@ -245,13 +259,48 @@ export default function Preloader() {
         `M${box.x} ${box.y} H${box.x + box.w} V${box.y + box.h} H${box.x} Z ${FRAME_OUTLINES[G.key]}`,
       );
     };
+    // The colour waves are HTML layers over the frame, moved only by
+    // compositor animations (Web Animations on transform), so they keep
+    // gliding and rising smoothly even while the page's own loading work
+    // blocks the main thread (on phones that froze them for up to ~1/3 s at
+    // a time). Their container is clipped to the frame's outline; sizes are
+    // the scene's units times its on-screen scale.
+    const wavesEl = wavesRef.current;
+    let lay = { sx: 1, sy: 1, bx: 0, by: 0 };
+    const layoutWaves = () => {
+      const m = (bg as SVGSVGElement | null)?.getScreenCTM();
+      const host = containerRef.current?.getBoundingClientRect();
+      if (!m || !wavesEl || !host) return;
+      const box = outlineBox(G.key);
+      lay = { sx: m.a, sy: m.d, bx: box.x, by: box.y };
+      Object.assign(wavesEl.style, {
+        left: `${m.a * box.x + m.e - host.left}px`,
+        top: `${m.d * box.y + m.f - host.top}px`,
+        width: `${box.w * m.a}px`,
+        height: `${box.h * m.d}px`,
+      });
+      containerRef.current?.querySelector("[data-outline-unit]")?.setAttribute("d", box.unit);
+      wavesEl.querySelectorAll<HTMLElement>("[data-wave]").forEach((layer) => {
+        const w = WAVES[Number(layer.dataset.wave) % WAVES.length];
+        const band = waveBand(G, w.amp, w.period);
+        const svg = layer.querySelector("svg")!;
+        svg.setAttribute("viewBox", `${band.x} ${band.y} ${band.w} ${band.h}`);
+        Object.assign(svg.style, {
+          left: `${(band.x - box.x) * m.a}px`,
+          top: `${band.y * m.d}px`,
+          width: `${band.w * m.a}px`,
+          height: `${band.h * m.d}px`,
+        });
+        svg.querySelector("path")?.setAttribute("d", band.d);
+      });
+    };
     const fitAll = () => {
       fitBg();
       measureScreen();
       fitCover();
+      layoutWaves();
+      relaunchAll();
     };
-    fitAll();
-    window.addEventListener("resize", fitAll);
     // Captured once up front for the cleanup function below — by the
     // time cleanup runs, containerRef.current may have already changed
     // (or been nulled out by unmount), so it can't be read fresh there.
@@ -267,44 +316,73 @@ export default function Preloader() {
     let ready = false;
     let revealSlot = Infinity; // first wave slot that doesn't start
     const flowStart = performance.now();
+    const layers = wavesEl ? Array.from(wavesEl.querySelectorAll<HTMLElement>("[data-wave]")) : [];
     const layerWave = new Array<number>(WAVE_POOL).fill(-1); // wave each layer shows
+    const layerAnims: Animation[][] = Array.from({ length: WAVE_POOL }, () => []);
+    let launched = 0; // waves 0..launched-1 are scheduled
+    // Wave k: its own colour, on top of the earlier ones, rising over
+    // WAVE_RISE_S from k * WAVE_EVERY_S, gliding left to right all along.
+    // Scheduled ahead with exact start times, so it starts on time even if
+    // the main thread is busy at that moment.
+    const launch = (k: number) => {
+      const i = k % WAVE_POOL;
+      const layer = layers[i];
+      if (!layer) return;
+      const w = WAVES[k % WAVES.length];
+      layerAnims[i].forEach((an) => an.cancel());
+      if (layerWave[i] !== k) {
+        layerWave[i] = k;
+        layer.dataset.wave = String(k % WAVES.length);
+        layer.querySelector("path")?.setAttribute("fill", w.color);
+        layer.parentElement?.appendChild(layer); // on top
+      }
+      const band = waveBand(G, w.amp, w.period);
+      layer.querySelector("svg")?.setAttribute("viewBox", `${band.x} ${band.y} ${band.w} ${band.h}`);
+      const y = (level: number) => `translateY(${((waveY(G, level, w.amp) - lay.by) * lay.sy).toFixed(2)}px)`;
+      const now = document.timeline.currentTime as number;
+      const rise = layer.animate([{ transform: y(0) }, { transform: y(1) }], {
+        duration: WAVE_RISE_S * 1000,
+        delay: flowStart + k * WAVE_EVERY_S * 1000 - now,
+        fill: "both",
+        easing: "cubic-bezier(0.45, 0, 0.55, 1)", // gentle start and settle
+      });
+      const flow = (layer.firstElementChild as HTMLElement).animate(
+        [{ transform: "translateX(0px)" }, { transform: `translateX(${(w.period * lay.sx).toFixed(2)}px)` }],
+        { duration: (w.period / w.flow) * 1000, delay: flowStart - now, iterations: Infinity, easing: "linear" },
+      );
+      layerAnims[i] = [rise, flow];
+    };
+    // after a resize: the same waves again, at the new size, same timing
+    function relaunchAll() {
+      for (let k = Math.max(0, launched - WAVE_POOL); k < launched; k++) launch(k);
+    }
+    fitAll();
+    window.addEventListener("resize", fitAll);
     const draw = (now: number) => {
       const elapsed = (now - flowStart) / 1000;
-      const started = Math.min(revealSlot, Math.floor(elapsed / WAVE_EVERY_S) + 1);
-      const parent = waveRefs.current[0]?.parentNode;
-      for (let k = Math.max(0, started - WAVE_POOL); k < started; k++) {
-        const g = waveRefs.current[k % WAVE_POOL];
-        if (!g || !parent) continue;
-        const w = WAVES[k % WAVES.length];
-        if (layerWave[k % WAVE_POOL] !== k) {
-          // a new wave takes over this layer: its colour, moved to the top
-          layerWave[k % WAVE_POOL] = k;
-          g.querySelector("path")?.setAttribute("fill", w.color);
-          parent.appendChild(g);
-        }
-        // eased in and out (smoothstep) so each one starts and settles gently
-        const raw = Math.min(1, Math.max(0, (elapsed - k * WAVE_EVERY_S) / WAVE_RISE_S));
-        const level = raw * raw * (3 - 2 * raw);
-        // steady left-to-right glide, wrapped every period (seamless)
-        const dx = (elapsed * w.flow) % w.period;
-        g.setAttribute("transform", `translate(${dx.toFixed(2)} ${waveY(G, level, w.amp)})`);
-      }
       if (ready && revealSlot === Infinity) {
-        revealSlot = Math.max(WAVES.length, started);
+        revealSlot = Math.max(WAVES.length, Math.floor(elapsed / WAVE_EVERY_S) + 1);
       }
+      // schedule each wave one slot before it starts
+      while (launched < revealSlot && (launched - 1) * WAVE_EVERY_S <= elapsed) launch(launched++);
       // the last colour has filled the frame
       if (elapsed >= (revealSlot - 1) * WAVE_EVERY_S + WAVE_RISE_S && !revealing) {
         revealing = true;
+        // hand over to a solid fill of that colour inside the artwork (what
+        // the full frame looks like), so the site wave can cut into it
+        const fill = overlayRef.current?.querySelector("[data-final]");
+        fill?.setAttribute("fill", WAVES[(revealSlot - 1) % WAVES.length].color);
+        fill?.setAttribute("visibility", "visible");
+        if (wavesEl) wavesEl.style.visibility = "hidden";
+        layerAnims.flat().forEach((an) => an.cancel());
         reveal();
       }
     };
     let revealing = false;
     let raf = 0;
-    // keeps running through the reveal, so the colours still flowing under
-    // the rising site wave don't freeze
     const tick = (t: number) => {
       draw(t);
-      raf = requestAnimationFrame(tick);
+      if (!revealing) raf = requestAnimationFrame(tick);
     };
     raf = requestAnimationFrame(tick);
 
@@ -481,25 +559,37 @@ export default function Preloader() {
             <g clipPath="url(#preloader-space)">
               <g clipPath="url(#preloader-above)">
                 <image data-art="bg" suppressHydrationWarning />
-                {Array.from({ length: WAVE_POOL }, (_, i) => {
-                  const w = WAVES[i % WAVES.length];
-                  return (
-                    <g
-                      key={i}
-                      ref={(el) => {
-                        waveRefs.current[i] = el;
-                      }}
-                      transform={PARKED}
-                    >
-                      <path d={wavePath(GEOMS.wide, w.amp, w.period)} fill={w.color} />
-                    </g>
-                  );
-                })}
+                {/* the last colour, filling the frame, from the reveal on */}
+                <rect data-final="" data-cover="" x="0" y="0" width={BIG} height={BIG} visibility="hidden" suppressHydrationWarning />
               </g>
             </g>
           </g>
         </svg>
       </svg>
+      {/* the colour waves (see layoutWaves), clipped to the frame's outline */}
+      <svg width="0" height="0" className="absolute" aria-hidden="true">
+        <clipPath id="preloader-space-unit" clipPathUnits="objectBoundingBox">
+          <path data-outline-unit="" />
+        </clipPath>
+      </svg>
+      <div
+        ref={wavesRef}
+        aria-hidden="true"
+        className="pointer-events-none absolute left-0 top-0 h-0 w-0 overflow-hidden"
+        style={{ clipPath: "url(#preloader-space-unit)", WebkitClipPath: "url(#preloader-space-unit)" }}
+      >
+        {Array.from({ length: WAVE_POOL }, (_, i) => (
+          // outer: rise (translateY); inner: glide (translateX); both start
+          // parked far below the frame until their wave's turn
+          <div key={i} data-wave={i % WAVES.length} className="absolute left-0 top-0 will-change-transform" style={{ transform: "translateY(100000px)" }}>
+            <div className="will-change-transform">
+              <svg className="absolute block overflow-visible" preserveAspectRatio="none">
+                <path fill={WAVES[i % WAVES.length].color} />
+              </svg>
+            </div>
+          </div>
+        ))}
+      </div>
       {/* fits the artwork to this screen (see fitBg) as soon as it's parsed,
           so it shows at its final size from the very first frame instead of
           changing size once the page's scripts load */}

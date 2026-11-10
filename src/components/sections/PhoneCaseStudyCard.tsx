@@ -26,7 +26,7 @@ import { DEFAULT_CASE_STUDIES, type CaseStudy } from "@/lib/caseStudies";
 // of clipping or leaving dead space at some widths. The button keeps its
 // original fixed 140x41 — a small CTA control, not running text, so
 // there's no "text width" reason for it to stretch with the card.
-export const PHONE_CARD_HEIGHT = 515; // 479 designed + 36px extra room at the bottom
+export const PHONE_CARD_HEIGHT = 523; // 479 designed + 44px extra room at the bottom (fits a 3-line title)
 // The image box is full card width with the desktop card's 7:6 shape, so the
 // card's height follows its width: 479px was designed around a 218px-tall
 // box. 100cqw = the card's width (the phone stack's sticky row is the size
@@ -96,7 +96,7 @@ export default function PhoneCaseStudyCard({
           gap: 10,
           titleSize: 20,
           titleLineHeight: 1.5,
-          titleLines: 2,
+          titleLines: 3,
           bodySize: 14,
           bodyLines: 5,
           bodyLinesWithTags: 4,
