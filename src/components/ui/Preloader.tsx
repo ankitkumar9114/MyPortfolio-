@@ -110,9 +110,6 @@ function fitMode(g: Geom) {
 // is parsed, so the right artwork loads (and only that one) and shows at its
 // final size from the very first frame, before the page's scripts run.
 const SETUP_SCRIPT = `(function(){var s=document.getElementById("preloader-scene");if(!s)return;var G=${JSON.stringify(GEOMS)};var w=innerWidth,h=innerHeight;var g=w<=424?G.phone:w<=1024&&h>=w?G.tablet:G.wide;var r=w/h/(g.w/g.h);s.setAttribute("preserveAspectRatio",g.key!=="wide"||(r>0.8&&r<1.25)?"none":"xMidYMid slice");s.setAttribute("viewBox","0 0 "+g.w+" "+g.h);s.setAttribute("data-geom",g.key);s.querySelectorAll("[data-art]").forEach(function(e){e.setAttribute("href",g.bg);e.setAttribute("width",g.w);e.setAttribute("height",g.h)})})();`;
-// the loading counter's outline + shadow: readable on light and dark colours
-const LOADER_TEXT_SHADOW =
-  "0 0 1px rgba(40,10,20,0.9), 1px 1px 0 rgba(40,10,20,0.75), -1px 1px 0 rgba(40,10,20,0.75), 1px -1px 0 rgba(40,10,20,0.75), -1px -1px 0 rgba(40,10,20,0.75), 0 2px 10px rgba(40,10,20,0.55)";
 // bigger than any of the artworks: the backdrop colour and clip before the
 // effect fits them to the screen
 const BIG = 2000;
@@ -684,10 +681,9 @@ export default function Preloader() {
           </div>
         ))}
         {/* "LOADING" + the percentage, centred in the frame, above the waves.
-            White with a dark outline and shadow so it reads on every wave
-            colour and on the empty frame. Hidden with the waves at the
-            reveal. */}
-        <div className="absolute inset-0 flex flex-col items-center justify-center text-white" style={{ zIndex: 10000, textShadow: LOADER_TEXT_SHADOW }}>
+            Plain white (normal blend, no outline). Hidden with the waves at
+            the reveal. */}
+        <div className="absolute inset-0 flex flex-col items-center justify-center text-white" style={{ zIndex: 10000 }}>
           <span className="font-[family-name:var(--font-manrope)] text-[12px] font-bold uppercase leading-none tracking-[0.28em] desktop:text-[14px]">Loading</span>
           <span className="mt-[6px] font-[family-name:var(--font-arvo)] font-bold leading-none" style={{ fontSize: "clamp(40px, 5vw, 72px)" }}>
             {/* the boot script counts before React starts */}
