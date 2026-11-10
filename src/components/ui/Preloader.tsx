@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { gsap, isReducedMotion } from "@/lib/gsap";
 import { markPreloaderComplete } from "@/lib/preloaderSignal";
 import { FRAME_OUTLINES } from "./preloaderFrames";
+import { bootWaves } from "./preloaderBoot";
 
 // Below this, the preloader stays up for at least this long even if every
 // image is already cached — long enough for the "Loading" branding to
@@ -135,9 +136,15 @@ const WAVE_EVERY_S = WAVE_RISE_S * WAVE_STAGGER;
 // At least this many colours rise before the site shows (more while the
 // first screens are still loading); the ones already rising always finish.
 const MIN_WAVES = 2;
-// DOM wave layers, reused in turn (a wave this many back is already fully
-// covered by the ones after it, so its layer is free)
-const WAVE_POOL = WAVES.length + 1;
+// DOM wave layers, reused in turn: a layer is only reused once its old wave is
+// fully covered (WAVE_RISE_S / WAVE_EVERY_S waves rise at once, one more is
+// scheduled ahead, plus a spare).
+const WAVE_POOL = Math.ceil(1 / WAVE_STAGGER) + 4;
+// Starts the first round of waves from the page's HTML, before React is up
+// (see preloaderBoot); runs right after SETUP_SCRIPT has picked the artwork.
+const BOOT_SCRIPT = `(function(){if(matchMedia("(prefers-reduced-motion: reduce)").matches)return;var s=document.getElementById("preloader-scene");if(!s)return;var G=${JSON.stringify(
+  Object.fromEntries(Object.values(GEOMS).map((g) => [g.key, { key: g.key, w: g.w, h: g.h, top: g.top, bottom: g.bottom, x0: g.x0, x1: g.x1 }])),
+)};var O=${JSON.stringify(FRAME_OUTLINES)};var k=s.getAttribute("data-geom")||"wide";var A=${JSON.stringify(Object.fromEntries(Object.values(GEOMS).map((g) => [g.key, g.bg])))};try{(${bootWaves.toString()})({geom:G[k],art:A[k],outline:O[k],waves:${JSON.stringify(WAVES)},pool:${WAVE_POOL},riseMs:${WAVE_RISE_S * 1000},everyMs:${WAVE_EVERY_S * 1000},count:${WAVES.length}})}catch(e){}})();`;
 // The final reveal: one more wave rises through the frame, but instead of a
 // colour it shows the site (the screen gets a hole the shape of the frame's
 // space, filled with the same wavy edge); then that window grows until the
@@ -317,74 +324,111 @@ export default function Preloader() {
     // ones already rising finish filling the frame, and then the site wave
     // rises.
     let ready = false;
-    let revealSlot = Infinity; // first wave slot that doesn't start
-    const flowStart = performance.now();
+    // The boot script (preloaderBoot) starts the first round of waves before
+    // React is up, once the artwork has loaded; wait for it and carry on with
+    // those waves (or start afresh if it couldn't, or the screen changed).
+    type Boot = { flowStart: number; starts: number[]; geom: string } | null;
+    const bootPromise = (window as unknown as { __plBoot?: Promise<Boot> }).__plBoot;
+    let booting = !!bootPromise;
+    let flowStart = document.timeline.currentTime as number; // the glide's phase
     const layers = wavesEl ? Array.from(wavesEl.querySelectorAll<HTMLElement>("[data-wave]")) : [];
     const layerWave = new Array<number>(WAVE_POOL).fill(-1); // wave each layer shows
-    const layerAnims: Animation[][] = Array.from({ length: WAVE_POOL }, () => []);
-    let launched = 0; // waves 0..launched-1 are scheduled
-    // Wave k: its own colour, on top of the earlier ones, rising over
-    // WAVE_RISE_S from k * WAVE_EVERY_S, gliding left to right all along.
-    // Scheduled ahead with exact start times, so it starts on time even if
-    // the main thread is busy at that moment.
+    const stopLayer = (layer: HTMLElement) => {
+      layer.getAnimations().forEach((an) => an.cancel());
+      (layer.firstElementChild as HTMLElement | null)?.getAnimations().forEach((an) => an.cancel());
+    };
+    // starts[k]: when wave k starts rising (document timeline ms). Waves start
+    // strictly one after another, each at least WAVE_EVERY_S after the one
+    // before; if the page kept the main thread busy and a wave is scheduled
+    // late, it simply starts late. Nothing is skipped or fast-forwarded, so
+    // every colour shows in order and the last one scheduled is always the
+    // one that fills the frame.
+    const starts: number[] = [];
+    bootPromise?.then((b) => {
+      booting = false;
+      if (b && b.geom === pickGeom().key) {
+        flowStart = b.flowStart;
+        starts.push(...b.starts);
+        starts.forEach((_, k) => (layerWave[k % WAVE_POOL] = k));
+        relaunchAll(); // same waves, same timing, now owned here
+      } else {
+        layers.forEach(stopLayer);
+      }
+    });
+    let stopped = false; // no more waves (loading done, minimum shown)
     const launch = (k: number) => {
       const i = k % WAVE_POOL;
       const layer = layers[i];
       if (!layer) return;
       const w = WAVES[k % WAVES.length];
-      layerAnims[i].forEach((an) => an.cancel());
+      const now = document.timeline.currentTime as number;
+      if (starts[k] === undefined) starts[k] = Math.max(k ? starts[k - 1] + WAVE_EVERY_S * 1000 : now, now + 20);
+      stopLayer(layer);
       if (layerWave[i] !== k) {
         layerWave[i] = k;
         layer.dataset.wave = String(k % WAVES.length);
         layer.querySelector("path")?.setAttribute("fill", w.color);
-        layer.parentElement?.appendChild(layer); // on top
+        layer.style.zIndex = String(k + 1); // on top (z-index: the DOM is never reordered)
       }
       const band = waveBand(G, w.amp, w.period);
       layer.querySelector("svg")?.setAttribute("viewBox", `${band.x} ${band.y} ${band.w} ${band.h}`);
       const y = (level: number) => `translateY(${((waveY(G, level, w.amp) - lay.by) * lay.sy).toFixed(2)}px)`;
-      const now = document.timeline.currentTime as number;
-      const rise = layer.animate([{ transform: y(0) }, { transform: y(1) }], {
+      // pinned to exact times on the page's clock (startTime), not "from
+      // now": a new animation otherwise starts counting only once the busy
+      // main thread gets round to it, and the waves would slip
+      layer.animate([{ transform: y(0) }, { transform: y(1) }], {
         duration: WAVE_RISE_S * 1000,
-        delay: flowStart + k * WAVE_EVERY_S * 1000 - now,
         fill: "both",
         easing: "cubic-bezier(0.45, 0, 0.55, 1)", // gentle start and settle
-      });
-      const flow = (layer.firstElementChild as HTMLElement).animate(
+      }).startTime = starts[k];
+      (layer.firstElementChild as HTMLElement).animate(
         [{ transform: "translateX(0px)" }, { transform: `translateX(${(w.period * lay.sx).toFixed(2)}px)` }],
-        { duration: (w.period / w.flow) * 1000, delay: flowStart - now, iterations: Infinity, easing: "linear" },
-      );
-      layerAnims[i] = [rise, flow];
+        { duration: (w.period / w.flow) * 1000, iterations: Infinity, easing: "linear" },
+      ).startTime = flowStart;
     };
     // after a resize: the same waves again, at the new size, same timing
     function relaunchAll() {
-      for (let k = Math.max(0, launched - WAVE_POOL); k < launched; k++) launch(k);
+      for (let k = Math.max(0, starts.length - WAVE_POOL); k < starts.length; k++) launch(k);
     }
     fitAll();
     window.addEventListener("resize", fitAll);
-    const draw = (now: number) => {
-      const elapsed = (now - flowStart) / 1000;
-      if (ready && revealSlot === Infinity) {
-        revealSlot = Math.max(MIN_WAVES, Math.floor(elapsed / WAVE_EVERY_S) + 1);
+    const draw = () => {
+      if (booting) return;
+      const now = document.timeline.currentTime as number;
+      const n = starts.length;
+      if (!stopped && ready && n >= MIN_WAVES) {
+        stopped = true;
+        // drop scheduled waves that haven't started yet (the boot script
+        // queues a whole round), so the site isn't kept waiting for them
+        while (starts.length > MIN_WAVES && starts[starts.length - 1] > now) {
+          const k = starts.length - 1;
+          const layer = layers[k % WAVE_POOL];
+          if (layer) stopLayer(layer);
+          layerWave[k % WAVE_POOL] = -1;
+          starts.pop();
+        }
       }
-      // schedule each wave one slot before it starts
-      while (launched < revealSlot && (launched - 1) * WAVE_EVERY_S <= elapsed) launch(launched++);
+      // schedule the next wave once the previous one has started (so the
+      // next is always queued a slot ahead, with an exact start time)
+      if (!stopped && (n === 0 || now >= starts[n - 1])) launch(n);
       // the last colour has filled the frame
-      if (elapsed >= (revealSlot - 1) * WAVE_EVERY_S + WAVE_RISE_S && !revealing) {
+      const last = starts.length - 1;
+      if (stopped && !revealing && now >= starts[last] + WAVE_RISE_S * 1000) {
         revealing = true;
         // hand over to a solid fill of that colour inside the artwork (what
         // the full frame looks like), so the site wave can cut into it
         const fill = overlayRef.current?.querySelector("[data-final]");
-        fill?.setAttribute("fill", WAVES[(revealSlot - 1) % WAVES.length].color);
+        fill?.setAttribute("fill", WAVES[last % WAVES.length].color);
         fill?.setAttribute("visibility", "visible");
         if (wavesEl) wavesEl.style.visibility = "hidden";
-        layerAnims.flat().forEach((an) => an.cancel());
+        layers.forEach(stopLayer);
         reveal();
       }
     };
     let revealing = false;
     let raf = 0;
-    const tick = (t: number) => {
-      draw(t);
+    const tick = () => {
+      draw();
       if (!revealing) raf = requestAnimationFrame(tick);
     };
     raf = requestAnimationFrame(tick);
@@ -576,22 +620,26 @@ export default function Preloader() {
       {/* the colour waves (see layoutWaves), clipped to the frame's outline */}
       <svg width="0" height="0" className="absolute" aria-hidden="true">
         <clipPath id="preloader-space-unit" clipPathUnits="objectBoundingBox">
-          <path data-outline-unit="" />
+          <path data-outline-unit="" suppressHydrationWarning />
         </clipPath>
       </svg>
       <div
         ref={wavesRef}
+        data-waves=""
         aria-hidden="true"
         className="pointer-events-none absolute left-0 top-0 h-0 w-0 overflow-hidden"
         style={{ clipPath: "url(#preloader-space-unit)", WebkitClipPath: "url(#preloader-space-unit)" }}
+        suppressHydrationWarning
       >
         {Array.from({ length: WAVE_POOL }, (_, i) => (
           // outer: rise (translateY); inner: glide (translateX); both start
           // parked far below the frame until their wave's turn
-          <div key={i} data-wave={i % WAVES.length} className="absolute left-0 top-0 will-change-transform" style={{ transform: "translateY(100000px)" }}>
+          // (the boot script sets their colour, size and stacking before React
+          // starts, hence suppressHydrationWarning)
+          <div key={i} data-wave={i % WAVES.length} className="absolute left-0 top-0 will-change-transform" style={{ transform: "translateY(100000px)" }} suppressHydrationWarning>
             <div className="will-change-transform">
-              <svg className="absolute block overflow-visible" preserveAspectRatio="none">
-                <path fill={WAVES[i % WAVES.length].color} />
+              <svg className="absolute block overflow-visible" preserveAspectRatio="none" suppressHydrationWarning>
+                <path fill={WAVES[i % WAVES.length].color} suppressHydrationWarning />
               </svg>
             </div>
           </div>
@@ -602,8 +650,10 @@ export default function Preloader() {
           changing size once the page's scripts load */}
       <script
         dangerouslySetInnerHTML={{
-          __html: SETUP_SCRIPT,
+          __html: SETUP_SCRIPT + BOOT_SCRIPT,
         }}
+        // the inlined boot code is compiled separately for server and browser
+        suppressHydrationWarning
       />
     </div>
   );
