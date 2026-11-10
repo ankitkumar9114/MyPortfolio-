@@ -452,9 +452,10 @@ export default function Footer() {
         width={TREE.w}
         height={TREE.h}
         loading="lazy"
-        // phone: a smaller tree at the window's top-left, rising over the
-        // purple section (the window starts 35.3% across the 340%-wide scene)
-        className="pointer-events-none absolute bottom-[56%] left-[var(--tree-left-phone)] z-30 block h-auto w-[24%] select-none tablet:bottom-[6%] tablet:left-[1%] tablet:w-[var(--tree-w)] tablet:portrait:left-[var(--tree-left-tablet)] desktop:portrait:left-[1%]"
+        // phone: a smaller tree at the window's top-left, rising a little over
+        // the purple section (the window starts 35.3% across the 340%-wide
+        // scene); 28% wide, its bottom 41% up the footer
+        className="pointer-events-none absolute bottom-[41%] left-[var(--tree-left-phone)] z-30 block h-auto w-[28%] select-none tablet:bottom-[6%] tablet:left-[1%] tablet:w-[var(--tree-w)] tablet:portrait:left-[var(--tree-left-tablet)] desktop:portrait:left-[1%]"
         style={{ ["--tree-left-tablet" as string]: TREE_LEFT_TABLET, ["--tree-left-phone" as string]: TREE_LEFT_PHONE, ["--tree-w" as string]: `${TREE_WIDTH}%`, ...layerStyle(st.tree), y: treeY, willChange: layerWillChange }}
       />
       </div>
