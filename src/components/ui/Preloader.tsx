@@ -8,31 +8,15 @@ import { FRAME_OUTLINES } from "./preloaderFrames";
 // Below this, the preloader stays up for at least this long even if every
 // image is already cached — long enough for the "Loading" branding to
 // actually register, short enough to not feel like an artificial delay.
-const MIN_VISIBLE_MS = 1600; // long enough for the logo fill to read
+const MIN_VISIBLE_MS = 1000;
 // Upper bound on how long the preloader will ever wait on images before
 // giving up and finishing anyway — protects against a single stuck
 // request (one that somehow never fires load OR error) holding the whole
 // page hostage behind the preloader indefinitely.
-const MAX_WAIT_MS = 15000;
-// Images that mount a moment after the first render (CMS content) are
-// picked up by one more scan this long after the start.
-const RESCAN_MS = 1200;
-// The LinkedIn post embeds are waited on too, but never longer than this
-// (they load from LinkedIn's servers, which can be slow).
-const EMBED_MAX_MS = 8000;
-
-// Resolves when a LinkedIn embed has loaded (AfterChatai marks it with
-// data-loaded) or after EMBED_MAX_MS, whichever comes first.
-function waitForEmbed(frame: HTMLIFrameElement, startedAt: number): Promise<void> {
-  return new Promise((resolve) => {
-    const deadline = startedAt + EMBED_MAX_MS;
-    const check = () => {
-      if (frame.dataset.loaded === "1" || Date.now() >= deadline) resolve();
-      else setTimeout(check, 150);
-    };
-    check();
-  });
-}
+const MAX_WAIT_MS = 8000;
+// Images that mount a moment after the first render are picked up by one
+// more scan this long after the start.
+const RESCAN_MS = 400;
 
 // Loads AND decodes an image, so it's ready to paint the instant it scrolls
 // into view (decoding a big image mid-scroll is what causes jank).
@@ -52,15 +36,31 @@ function prepareImage(src: string): Promise<void> {
 // rendered (an element under display:none reports no client rects, so the
 // other breakpoints' variants are skipped), plus CSS background images.
 // Lazy <img>s are switched to eager, so they load now instead of mid-scroll.
+// What the loader waits for: only what the first screens show, i.e. the
+// navigation and page background (outside <main>), the hero and the case
+// studies (the sections of <main> up to and including #work). Everything
+// further down (impact cards, TV, LinkedIn posts, shelf, footer) loads as the
+// visitor scrolls towards it (lazy images, posts loaded when near).
+function isPriority(el: Element) {
+  const main = document.querySelector("main");
+  if (!main || !main.contains(el)) return true;
+  const work = document.getElementById("work");
+  for (const section of Array.from(main.children)) {
+    if (section.contains(el)) return true;
+    if (work && section.contains(work)) return false;
+  }
+  return false;
+}
 function collectImageUrls(): string[] {
   const urls = new Set<string>();
   for (const img of Array.from(document.images)) {
-    if (img.getClientRects().length === 0) continue;
+    if (img.getClientRects().length === 0 || !isPriority(img)) continue;
     if (img.loading === "lazy") img.loading = "eager";
     const src = img.currentSrc || img.src;
     if (src) urls.add(src);
   }
   for (const el of Array.from(document.querySelectorAll<HTMLElement>("body, body *"))) {
+    if (!isPriority(el)) continue;
     const bg = getComputedStyle(el).backgroundImage;
     if (!bg || bg === "none") continue;
     for (const m of bg.matchAll(/url\(["']?([^"')]+)["']?\)/g)) {
@@ -129,9 +129,12 @@ const WAVES = [
 // rising over the one before, until the site is ready; there's never a pause
 // with the frame sitting full. Each wave takes WAVE_RISE_S to fill the space;
 // the next one starts at a quarter of that (WAVE_STAGGER).
-const WAVE_RISE_S = 3;
+const WAVE_RISE_S = 1.4;
 const WAVE_STAGGER = 0.25;
 const WAVE_EVERY_S = WAVE_RISE_S * WAVE_STAGGER;
+// At least this many colours rise before the site shows (more while the
+// first screens are still loading); the ones already rising always finish.
+const MIN_WAVES = 2;
 // DOM wave layers, reused in turn (a wave this many back is already fully
 // covered by the ones after it, so its layer is free)
 const WAVE_POOL = WAVES.length + 1;
@@ -140,8 +143,8 @@ const WAVE_POOL = WAVES.length + 1;
 // space, filled with the same wavy edge); then that window grows until the
 // site fills the screen.
 const SITE_WAVE = { amp: 11, period: 220, flow: 100 };
-const SITE_FILL_S = 1.5; // the site wave's rise through the frame
-const ZOOM_S = 1.3; // the window growing to full screen
+const SITE_FILL_S = 0.8; // the site wave's rise through the frame
+const ZOOM_S = 0.8; // the window growing to full screen
 
 // A colour wave: a smooth sine top edge (period `p`, height `a`) along y=0,
 // sampled finely, filled down to `depth` below it (enough to reach the
@@ -310,9 +313,9 @@ export default function Preloader() {
 
     // Wave k (0, 1, 2, …) starts rising at k * WAVE_EVERY_S, in colour
     // WAVES[k % WAVES.length], on top of all the earlier ones. Once loading
-    // is done no new colour starts (but never before a full round of
-    // colours); the ones already rising finish filling the frame, and then
-    // the site wave rises.
+    // is done no new colour starts (but never before MIN_WAVES of them); the
+    // ones already rising finish filling the frame, and then the site wave
+    // rises.
     let ready = false;
     let revealSlot = Infinity; // first wave slot that doesn't start
     const flowStart = performance.now();
@@ -361,7 +364,7 @@ export default function Preloader() {
     const draw = (now: number) => {
       const elapsed = (now - flowStart) / 1000;
       if (ready && revealSlot === Infinity) {
-        revealSlot = Math.max(WAVES.length, Math.floor(elapsed / WAVE_EVERY_S) + 1);
+        revealSlot = Math.max(MIN_WAVES, Math.floor(elapsed / WAVE_EVERY_S) + 1);
       }
       // schedule each wave one slot before it starts
       while (launched < revealSlot && (launched - 1) * WAVE_EVERY_S <= elapsed) launch(launched++);
@@ -400,17 +403,11 @@ export default function Preloader() {
       tasks.push(t);
       return t;
     };
-    const seenFrames = new Set<HTMLIFrameElement>();
     const scan = () => {
       for (const url of collectImageUrls()) {
         if (seen.has(url)) continue;
         seen.add(url);
         track(prepareImage(url));
-      }
-      for (const frame of Array.from(document.querySelectorAll<HTMLIFrameElement>(".post-card iframe[src]"))) {
-        if (seenFrames.has(frame)) continue;
-        seenFrames.add(frame);
-        track(waitForEmbed(frame, startedAt));
       }
     };
 

@@ -37,8 +37,6 @@ function subscribePhone(cb: () => void) {
 // Selected LinkedIn posts, via LinkedIn's "Embed this post" code. To add or
 // remove one, edit this list (urn + the height LinkedIn's embed code gives).
 
-const noopSubscribe = () => () => {};
-
 // The embeds come from LinkedIn's servers: open those connections early.
 const LINKEDIN_ORIGINS = ["https://www.linkedin.com", "https://static.licdn.com", "https://media.licdn.com"];
 
@@ -54,12 +52,25 @@ export default function AfterChatai() {
   const zoom = cardScale * (tablet ? TABLET_CARD_FACTOR : phone ? PHONE_CARD_FACTOR : 1);
   const sectionRef = useRef<HTMLElement>(null);
   const [inView, setInView] = useState(false);
-  // Every embed starts loading as soon as the page is running in the browser
-  // (while the loader is still up; the loader waits for them, see
-  // Preloader.tsx), so they're ready by the time anyone scrolls here. Not in
-  // the server HTML: the browser would start them before React could catch
-  // their load events.
-  const near = useSyncExternalStore(noopSubscribe, () => true, () => false);
+  // The embeds load once the section is within about two screens of the
+  // window (not with the page: the loader no longer waits for them), so
+  // they're ready by the time anyone scrolls here. Not in the server HTML:
+  // the browser would start them before React could catch their load events.
+  const [near, setNear] = useState(false);
+  useEffect(() => {
+    const el = sectionRef.current;
+    if (!el) return;
+    const io = new IntersectionObserver(
+      ([e]) => {
+        if (!e.isIntersecting) return;
+        setNear(true);
+        io.disconnect();
+      },
+      { rootMargin: "200% 0px" },
+    );
+    io.observe(el);
+    return () => io.disconnect();
+  }, []);
   const [loaded, setLoaded] = useState<Record<string, boolean>>({});
   useEffect(() => {
     const el = sectionRef.current;
