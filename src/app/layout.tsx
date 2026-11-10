@@ -1,18 +1,11 @@
 import type { Metadata } from "next";
-import { Arvo, Bricolage_Grotesque, Caveat, Inter, Manrope, Merriweather, Newsreader } from "next/font/google";
+import { Arvo, Caveat, Manrope, Merriweather } from "next/font/google";
 import Script from "next/script";
 import "./globals.css";
 
-const bodyFont = Inter({
-  variable: "--font-body",
-  subsets: ["latin"],
-});
-
-const displayFont = Bricolage_Grotesque({
-  variable: "--font-display",
-  subsets: ["latin"],
-});
-
+// Four typefaces only: Arvo for headings, Merriweather for sub-headings,
+// Manrope for body text (also the page's default font, see globals.css) and
+// Caveat for the handwritten bits.
 const serifFont = Merriweather({
   variable: "--font-serif",
   subsets: ["latin"],
@@ -25,7 +18,8 @@ const serifFont = Merriweather({
   weight: ["400", "700", "900"],
 });
 
-// Handwriting for the crayon "controller" scribble on the TV.
+// Handwriting: the crayon "controller" scribble on the TV, the shelf label
+// and the "click"/"hover" hints.
 const caveatFont = Caveat({
   variable: "--font-caveat",
   subsets: ["latin"],
@@ -47,16 +41,6 @@ const manropeFont = Manrope({
   weight: ["400", "500", "600", "700"],
 });
 
-// Impact-in-Numbers' colored stat/tag text ("IQOL", "ACN", "Vault") per
-// Figma's font-family: 'Newsreader', font-weight: 800 — not used
-// anywhere else on the page yet, so it's its own font rather than
-// reusing/renaming an existing variable.
-const newsreaderFont = Newsreader({
-  variable: "--font-newsreader",
-  subsets: ["latin"],
-  weight: ["800"],
-});
-
 export const metadata: Metadata = {
   title: "Your Name — Portfolio",
   description: "Designer & developer crafting immersive digital experiences.",
@@ -69,7 +53,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
     <html
       lang="en"
       suppressHydrationWarning
-      className={`${bodyFont.variable} ${displayFont.variable} ${serifFont.variable} ${arvoFont.variable} ${caveatFont.variable} ${manropeFont.variable} ${newsreaderFont.variable} h-full antialiased`}
+      className={`${serifFont.variable} ${arvoFont.variable} ${caveatFont.variable} ${manropeFont.variable} h-full antialiased`}
     >
       <body className="min-h-full" suppressHydrationWarning>
         {/* Runs before Next's own code / hydration (strategy=

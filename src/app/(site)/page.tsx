@@ -4,6 +4,7 @@ import ImpactInNumbers from "@/components/sections/ImpactInNumbers";
 import ProductIBuild from "@/components/sections/ProductIBuild";
 import AfterChatai from "@/components/sections/AfterChatai";
 import Footer from "@/components/sections/Footer";
+import PauseOffscreenAnimations from "@/components/providers/PauseOffscreenAnimations";
 
 export default function Home() {
   return (
@@ -14,6 +15,7 @@ export default function Home() {
       <ProductIBuild />
       <AfterChatai />
       <Footer />
+      <PauseOffscreenAnimations />
     </main>
   );
 }

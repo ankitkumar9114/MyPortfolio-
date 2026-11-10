@@ -4,6 +4,17 @@
 // from Drive server-side, passing the browser's Range header through so
 // seeking and looping work. Only Drive files used by a published TV channel
 // are served, so the route can't be used to proxy any other file.
+//
+// Caching: Vercel's CDN never caches a request carrying a Range header, nor
+// a 206 response, so the TV downloads each video as one plain request (no
+// Range; see useCachedVideoSrc in TvScreen) and that full 200 response is
+// cached on the CDN (up to its 20MB limit for streamed responses) and in the
+// browser. After the first play anywhere, videos come straight from the
+// CDN instead of this function re-downloading them from Drive. A Drive file
+// id's content doesn't change; a new video in the CMS is a new id/URL.
+// Range requests (the fallback) still stream through, uncached on the CDN.
+const FULL_CACHE = "public, max-age=604800, s-maxage=31536000, stale-while-revalidate=604800";
+const RANGE_CACHE = "public, max-age=604800";
 
 const PROJECT_ID = process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID;
 const API_KEY = process.env.NEXT_PUBLIC_FIREBASE_API_KEY;
@@ -65,7 +76,7 @@ export async function GET(request: Request) {
   const headers = new Headers({
     "Content-Type": type,
     "Accept-Ranges": "bytes",
-    "Cache-Control": "public, max-age=3600",
+    "Cache-Control": range ? RANGE_CACHE : FULL_CACHE,
   });
   for (const h of ["content-length", "content-range"]) {
     const v = upstream.headers.get(h);

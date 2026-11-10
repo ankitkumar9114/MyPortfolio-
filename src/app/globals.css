@@ -41,7 +41,7 @@
   --color-muted: var(--muted);
   --color-border: var(--border);
   --color-accent: var(--accent);
-  --font-sans: var(--font-body);
+  --font-sans: var(--font-manrope);
 }
 
 html {
@@ -100,7 +100,7 @@ body {
   background-repeat: repeat-y;
   background-attachment: fixed;
   color: var(--foreground);
-  font-family: var(--font-body), Arial, Helvetica, sans-serif;
+  font-family: var(--font-manrope), Arial, Helvetica, sans-serif;
 }
 
 /* Phone: the wall texture shown upside down (flipped vertically). A body
@@ -612,4 +612,11 @@ body {
 @keyframes shelf-ctrl-led {
   0% { filter: brightness(2.2); }
   100% { filter: brightness(1); }
+}
+
+/* Sections out of view (see PauseOffscreenAnimations): their CSS animations
+   pause until they're back on screen. */
+[data-offscreen],
+[data-offscreen] * {
+  animation-play-state: paused !important;
 }

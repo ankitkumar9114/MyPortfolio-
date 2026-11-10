@@ -483,7 +483,15 @@ export default function Preloader() {
     // Live progress as each image actually resolves, so the number means
     // something real instead of being a decorative countdown.
     track(document.fonts.ready);
-    scan();
+    // The first scan waits a frame: components that pick their layout from
+    // the screen size (e.g. the TV scene, desktop/tablet only) first render
+    // their server (desktop) version during hydration and swap right after.
+    // Scanning straight away would download images (like the TV's, ~1MB)
+    // that a phone never shows.
+    let firstScan = 0;
+    const firstFrame = requestAnimationFrame(() => {
+      firstScan = window.setTimeout(scan, 0);
+    });
     // a second scan picks up images that mounted after the first render;
     // finish once everything found by then has settled
     const rescan = window.setTimeout(() => {
@@ -500,6 +508,8 @@ export default function Preloader() {
     return () => {
       window.clearTimeout(safety);
       window.clearTimeout(rescan);
+      cancelAnimationFrame(firstFrame);
+      window.clearTimeout(firstScan);
       cancelAnimationFrame(raf);
       window.removeEventListener("resize", fitAll);
       gsap.killTweensOf(container);

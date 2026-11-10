@@ -182,14 +182,46 @@ export function TvPicture({
   );
 }
 
-function ChannelVideo({ src, on, playing, volume }: { src: string; on: boolean; playing: boolean; volume: number }) {
+// A proxied Drive video, downloaded once as a whole (one plain request, so
+// the CDN can cache it; see /api/drive-video) and played from memory, where
+// seeking and looping need no more requests. Shared across channel switches.
+// Falls back to streaming the URL if the download fails.
+const videoBlobs = new Map<string, Promise<string>>();
+function useCachedVideoSrc(src: string) {
+  const proxied = src.startsWith("/api/drive-video");
+  const [ready, setReady] = useState<{ for: string; url: string } | null>(null);
+  useEffect(() => {
+    if (!proxied) return;
+    let alive = true;
+    let p = videoBlobs.get(src);
+    if (!p) {
+      p = fetch(src)
+        .then((r) => (r.ok ? r.blob() : Promise.reject(new Error(String(r.status)))))
+        .then((b) => URL.createObjectURL(b));
+      p.catch(() => videoBlobs.delete(src));
+      videoBlobs.set(src, p);
+    }
+    p.then(
+      (url) => alive && setReady({ for: src, url }),
+      () => alive && setReady({ for: src, url: src }),
+    );
+    return () => {
+      alive = false;
+    };
+  }, [src, proxied]);
+  if (!proxied) return src;
+  return ready?.for === src ? ready.url : undefined;
+}
+
+function ChannelVideo({ src: rawSrc, on, playing, volume }: { src: string; on: boolean; playing: boolean; volume: number }) {
+  const src = useCachedVideoSrc(rawSrc);
   const ref = useRef<HTMLVideoElement>(null);
   useEffect(() => {
     const v = ref.current;
     if (!v) return;
     if (on && playing) v.play().catch(() => {});
     else v.pause();
-  }, [on, playing]);
+  }, [on, playing, src]);
   // Volume = the set's volume × how much of the screen is in view, eased so
   // the sound fades out slowly as the TV scrolls off the page (and back in
   // when it returns) instead of cutting.

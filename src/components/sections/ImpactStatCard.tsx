@@ -92,7 +92,7 @@ export default function ImpactStatCard({ heading, subtitle, tag }: { heading: st
           </p>
         </div>
         <p
-          className="font-[family-name:var(--font-newsreader)] font-extrabold text-[#881337] text-[22px] tablet:text-[27px] desktop:text-[32px]"
+          className="font-[family-name:var(--font-serif)] font-black text-[#881337] text-[22px] tablet:text-[27px] desktop:text-[32px]"
           style={{ lineHeight: "120%" }}
         >
           {tag}

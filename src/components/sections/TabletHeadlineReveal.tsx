@@ -15,7 +15,7 @@ export default function TabletHeadlineReveal() {
         <span className="inline-flex shrink-0" style={{ transform: "rotate(25deg)" }}>
           {/* eslint-disable-next-line @next/next/no-img-element -- local decorative SVG, no raster optimization to gain */}
           <img
-            src="/graphics/lotus.svg"
+            src="/graphics/lotus.webp"
             alt=""
             aria-hidden="true"
             width={24}
@@ -35,7 +35,7 @@ export default function TabletHeadlineReveal() {
         <span className="inline-flex shrink-0" style={{ transform: "scaleX(-1) rotate(25deg)" }}>
           {/* eslint-disable-next-line @next/next/no-img-element -- local decorative SVG, no raster optimization to gain */}
           <img
-            src="/graphics/lotus.svg"
+            src="/graphics/lotus.webp"
             alt=""
             aria-hidden="true"
             width={24}
