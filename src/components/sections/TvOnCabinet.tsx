@@ -330,7 +330,7 @@ export default function TvOnCabinet({ children }: { children: ReactNode }) {
     () => !window.matchMedia(REDUCED_MOTION).matches,
     () => false,
   );
-  const [geo, setGeo] = useState({ originX: 0, originY: 0, frameOffset: 0, zoom: 1, distance: 0, vh: 0, headingTop: 0, peopleDrop: 0 });
+  const [geo, setGeo] = useState({ originX: 0, originY: 0, frameOffset: 0, zoom: 1, distance: 0, vh: 0, headingTop: 0, peopleDrop: 0, cover: null as null | { left: number; top: number; width: number; height: number } });
   // Height of the after-zoom content (heading + photo); it grows with its
   // content, and the pink panel is sized to cover all of it.
   const afterRef = useRef<HTMLDivElement>(null);
@@ -392,8 +392,19 @@ export default function TvOnCabinet({ children }: { children: ReactNode }) {
     // image's bottom edge, with the window's bottom (+2px for rounding).
     const peopleBottom = scene.offsetHeight - lift - peopleH * (1 - 574 / 599) - 2; // scene px
     const peopleDrop = clampNum(vh - frameOffset - peopleBottom, 0, Math.max(0, lift));
+    const originX = (tX - zoom * cX) / (1 - zoom);
+    // The dark cover only has to hide what's on screen. In the scene's own
+    // px the window is the rect V below; zooming by k about the origin O
+    // shows O + (V - O)/k, which always lies inside the box around V and O.
+    // (The bottom is extended in render for the scroll after the zoom.)
+    const vLeft = -(vw - w) / 2;
+    const vTop = -frameOffset;
+    const coverLeft = Math.min(vLeft, originX) - 2;
+    const coverTop = Math.min(vTop, originY) - 2;
+    const coverRight = Math.max(vLeft + vw, originX) + 2;
+    const coverBottom = Math.max(vTop + vh, originY) + 2;
     setGeo({
-      originX: (tX - zoom * cX) / (1 - zoom),
+      originX,
       originY,
       frameOffset,
       zoom,
@@ -403,6 +414,7 @@ export default function TvOnCabinet({ children }: { children: ReactNode }) {
       vh,
       headingTop: clothBottom - vh + HEADING_GAP,
       peopleDrop,
+      cover: { left: coverLeft, top: coverTop, width: coverRight - coverLeft, height: coverBottom - coverTop },
     });
   }, [tvWidth, tvLeft, starOverhang, people, peopleY]);
 
@@ -634,11 +646,23 @@ export default function TvOnCabinet({ children }: { children: ReactNode }) {
         <div aria-hidden="true" style={{ paddingTop: `${starOverhang + padding}%` }} />
         {/* Dark grey backdrop for the end of the zoom: z -9 puts it above
             the star (-10) and below the TV's screen (-8), glass and frame.
-            Oversized so it covers the whole window at any zoom level. */}
+            Just big enough to cover the window at every zoom level (see
+            measure), not a huge layer the browser struggles to draw. */}
         <motion.div
           aria-hidden="true"
           className="pointer-events-none absolute -z-[9]"
-          style={{ inset: "-400%", background: DARK_BG, opacity: darkness }}
+          style={{
+            ...(geo.cover
+              ? {
+                  ...geo.cover,
+                  // plus the scroll after the zoom, as the pinned frame moves up
+                  // off the window (screen px over the final zoom), like the panel
+                  height: geo.cover.height + (geo.vh + Math.max(afterH, geo.vh * AFTER_ZOOM_VH) + 40) / geo.zoom,
+                }
+              : { inset: 0 }),
+            background: DARK_BG,
+            opacity: darkness,
+          }}
         />
         <motion.img
           src="/images/tv-table.webp"

@@ -464,7 +464,7 @@ export default function GradientHero() {
             <MobileAvatarToggle
               className="left-1/2 -translate-x-1/2"
               style={{ top: TABLET_AVATAR_TOP, width: TABLET_AVATAR_W, height: TABLET_AVATAR_H }}
-              hint={<AvatarHint label="click" id="hint-tablet" width="clamp(110px, 15vw, 170px)" top="-7%" anchor="40%" className="group-data-[on=true]:opacity-0" />}
+              hint={<AvatarHint label="click" id="hint-tablet" width="clamp(110px, 15vw, 170px)" top="-7%" anchor="40%" />}
             />
           </div>
         </div>
@@ -636,7 +636,7 @@ export default function GradientHero() {
               className="pointer-events-none absolute left-1/2 top-0 z-[7] h-[210px] w-[211.2px] translate-x-[calc(-50%-8px)] select-none"
             />
             <MobileAvatarToggle
-              hint={<AvatarHint label="click" id="hint-phone" width="112px" top="-11%" anchor="69%" side="right" className="group-data-[on=true]:opacity-0" />}
+              hint={<AvatarHint label="click" id="hint-phone" width="112px" top="-11%" anchor="69%" side="right" />}
             />
           </div>
         </div>
