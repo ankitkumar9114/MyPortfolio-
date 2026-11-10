@@ -36,7 +36,6 @@ function NavLink({ item }: { item: NavItem }) {
       {...(item.external
         ? { target: "_blank", rel: "noopener noreferrer" }
         : { onClick: (e: MouseEvent<HTMLAnchorElement>) => scrollToSection(e, item.href) })}
-      data-cursor="hover"
       className="font-[family-name:var(--font-manrope)] text-[18px] font-semibold tracking-wide text-white transition-colors hover:text-white/75"
     >
       {item.label}
@@ -61,7 +60,6 @@ export default function HeaderNav() {
           else window.scrollTo({ top: 0, behavior: "smooth" });
           history.replaceState(null, "", location.pathname);
         }}
-        data-cursor="hover"
       >
         {/* eslint-disable-next-line @next/next/no-img-element -- local decorative SVG, no raster optimization to gain */}
         <img src="/graphics/ankit-logo.svg" alt="" width={35} height={37} className="h-[41.625px] w-[39.375px] select-none" />
