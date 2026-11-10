@@ -428,3 +428,29 @@ body {
 .no-scrollbar::-webkit-scrollbar {
   display: none;
 }
+
+/* Resume page (src/app/resume): printing / "Save as PDF" leaves only the
+   framed cream sheet, keeping its colours. */
+@media print {
+  @page {
+    margin: 10mm;
+  }
+  body:has(.resume-page),
+  body:has(.resume-page)::before {
+    background: none !important;
+  }
+  .resume-noprint {
+    display: none !important;
+  }
+  .resume-page {
+    background: none !important;
+    padding: 0 !important;
+    min-height: 0 !important;
+  }
+  .resume-sheet {
+    box-shadow: none !important;
+    max-width: none !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+}
