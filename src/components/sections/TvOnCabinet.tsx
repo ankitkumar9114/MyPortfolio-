@@ -1254,7 +1254,7 @@ const RIBBON_REPEAT = 6; // segments per half; covers wide screens
 function VibeRibbon({ duration, reverse = false }: { duration: number; reverse?: boolean }) {
   const half = Array.from({ length: RIBBON_REPEAT }, (_, i) => (
     <span key={i} className="flex shrink-0 items-center gap-10 pr-10">
-      <span>VIBE COADING</span>
+      <span>VIBE CODING</span>
       <span
         className="block aspect-square w-[0.4em] bg-[#BFBFBF]"
         style={{ clipPath: "polygon(50% 0, 100% 50%, 50% 100%, 0 50%)" }}

@@ -14,7 +14,7 @@ import type { CSSProperties } from "react";
 // reference respectively, and neither ratio reads right across tablet's
 // own 425-1024px range. These are tuned against a 768px "typical tablet"
 // midpoint instead.
-const ITEMS = ["FIGMA", "AFTER EFFECTS", "PREMIER PRO", "CLAUDE CODE"];
+const ITEMS = ["FIGMA", "AFTER EFFECTS", "PREMIERE PRO", "CLAUDE CODE"];
 const LAPS = 4;
 
 function Sparkle({ className, style }: { className?: string; style?: CSSProperties }) {

@@ -21,7 +21,7 @@ import type { CSSProperties } from "react";
 // bigger than mobile's here since the wobble (tan(deg) * distance from
 // the bar's own center to the viewport edge) grows with viewport width
 // too, and desktop windows run wider than phones.
-const ITEMS = ["FIGMA", "AFTER EFFECTS", "PREMIER PRO", "CLAUDE CODE"];
+const ITEMS = ["FIGMA", "AFTER EFFECTS", "PREMIERE PRO", "CLAUDE CODE"];
 const LAPS = 3;
 
 function Sparkle({ className, style }: { className?: string; style?: CSSProperties }) {

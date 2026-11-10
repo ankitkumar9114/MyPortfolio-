@@ -73,7 +73,7 @@ export default function ProductIBuild() {
               className="whitespace-nowrap font-[family-name:var(--font-serif)] font-bold text-[16px] tablet:text-[20px] desktop:text-[28px]"
               style={{ lineHeight: "105%", letterSpacing: "0.04em", color: "#353232" }}
             >
-              vibe coading
+              vibe coding
             </p>
             <div className="h-[2px] w-[12vw] flex-none tablet:w-[10vw] tablet:flex-none desktop:flex-1" style={{ background: "#616161" }} />
           </div>

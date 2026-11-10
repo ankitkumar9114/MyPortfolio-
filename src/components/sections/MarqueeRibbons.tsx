@@ -21,7 +21,7 @@ import type { CSSProperties } from "react";
 // +3.81deg with black text, green bar #04634B at -3.79deg with white text
 // and a soft drop shadow — the near-mirrored opposite rotations are what
 // make the two bars visually cross.
-const ITEMS = ["FIGMA", "AFTER EFFECTS", "PREMIER PRO", "CLAUDE CODE"];
+const ITEMS = ["FIGMA", "AFTER EFFECTS", "PREMIERE PRO", "CLAUDE CODE"];
 const LAPS = 4;
 
 function Sparkle({ className, style }: { className?: string; style?: CSSProperties }) {

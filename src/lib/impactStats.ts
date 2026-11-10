@@ -18,7 +18,7 @@ export const IMPACT_STATS_COLLECTION = "impactStats";
 // What the site shows until the CMS has published stat cards.
 export const DEFAULT_IMPACT_STATS: ImpactStat[] = [
   { heading: "X0% Reduced", subtitle: "Delay of the", tag: "Vault" },
-  { heading: "Lead Full CRM Design", subtitle: "for internal Team", tag: "IQOL" },
+  { heading: "Led Full CRM Design", subtitle: "for Internal Team", tag: "IQOL" },
   { heading: "20% Increase", subtitle: "In the agent enquiry", tag: "ACN" },
   { heading: "40% Increase", subtitle: "In the app usage", tag: "ACN" },
 ].map((c, i) => ({ ...c, id: `default-${i + 1}`, order: i, published: true }));
