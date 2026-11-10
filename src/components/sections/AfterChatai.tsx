@@ -53,6 +53,32 @@ export default function AfterChatai() {
   const zoom = cardScale * (tablet ? TABLET_CARD_FACTOR : phone ? PHONE_CARD_FACTOR : 1);
   const sectionRef = useRef<HTMLElement>(null);
   const postsTrackRef = useRef<HTMLDivElement>(null);
+  const postsViewRef = useRef<HTMLDivElement>(null);
+  // Phone: only the posts on or next to the screen are loaded (about 3 of
+  // the 12 embeds), and posts that scroll far away are unloaded again. Each
+  // embed is a whole LinkedIn page (with more frames inside); phones run them
+  // all in the site's own tab, and a dozen at once made the row lag and the
+  // tab crash. Tablet/desktop keep every embed loaded.
+  const [loaded, setLoaded] = useState<Record<string, boolean>>({});
+  const [inRange, setInRange] = useState<Record<string, boolean>>({});
+  useEffect(() => {
+    const view = postsViewRef.current;
+    if (!phone || !view) return;
+    const io = new IntersectionObserver(
+      (entries) => {
+        setInRange((m) => {
+          const next = { ...m };
+          for (const e of entries) next[(e.target as HTMLElement).dataset.postKey!] = e.isIntersecting;
+          return next;
+        });
+        const leaving = entries.filter((e) => !e.isIntersecting).map((e) => (e.target as HTMLElement).dataset.postKey!);
+        if (leaving.length) setLoaded((m) => ({ ...m, ...Object.fromEntries(leaving.map((k) => [k, false])) }));
+      },
+      { root: view, rootMargin: "0px 110% 0px 110%" },
+    );
+    view.querySelectorAll<HTMLElement>("[data-post-key]").forEach((el) => io.observe(el));
+    return () => io.disconnect();
+  }, [phone]);
   // phone: the posts row can also be swiped (it keeps going by itself after)
   useSwipeableMarquee(postsTrackRef, POSTS_LOOP_S);
   const [inView, setInView] = useState(false);
@@ -75,7 +101,6 @@ export default function AfterChatai() {
     io.observe(el);
     return () => io.disconnect();
   }, []);
-  const [loaded, setLoaded] = useState<Record<string, boolean>>({});
   useEffect(() => {
     const el = sectionRef.current;
     if (!el || process.env.NODE_ENV !== "development") return;
@@ -139,6 +164,7 @@ export default function AfterChatai() {
         // phone 48px / tablet 72px below "my post" instead of POSTS_GAP; tablet 140px of
         // purple below the cards (the section isn't held at full screen
         // height there) instead of POSTS_BOTTOM
+        ref={postsViewRef}
         className="posts-marquee relative mt-[48px] w-full overflow-hidden pb-[60px] tablet:mt-[72px] tablet:pb-[140px] desktop:mt-[var(--posts-gap)] desktop:pb-[var(--posts-bottom)]"
         style={{ ["--posts-gap" as string]: `${POSTS_GAP}px`, ["--posts-bottom" as string]: `${POSTS_BOTTOM}px` }}
       >
@@ -169,7 +195,7 @@ export default function AfterChatai() {
                 {/* soft placeholder until the post has loaded */}
                 {!loaded[`${copy}-${post.urn}`] && <div aria-hidden="true" className="absolute inset-0 animate-pulse bg-[#f3f2ef]" />}
                 <iframe
-                  src={near ? linkedinEmbedUrl(post.urn) : undefined}
+                  src={near && (!phone || inRange[`${copy}-${post.urn}`]) ? linkedinEmbedUrl(post.urn) : undefined}
                   title="LinkedIn post"
                   width="100%"
                   height={post.height}
@@ -196,7 +222,7 @@ export default function AfterChatai() {
               );
               // phone: a box at the scaled size holds the transformed card
               return phone ? (
-                <div key={`${copy}-${post.urn}`} className="shrink-0" style={{ width: 504 * zoom, height: post.height * zoom, marginRight: PHONE_CARD_GAP }}>
+                <div key={`${copy}-${post.urn}`} data-post-key={`${copy}-${post.urn}`} className="shrink-0" style={{ width: 504 * zoom, height: post.height * zoom, marginRight: PHONE_CARD_GAP }}>
                   {card}
                 </div>
               ) : (

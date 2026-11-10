@@ -1,6 +1,4 @@
-import CaseStudyCarousel from "./CaseStudyCarousel";
-import PhoneCaseStudyStack from "./PhoneCaseStudyStack";
-import TabletCaseStudyStack from "./TabletCaseStudyStack";
+import CaseStudiesForScreen from "./CaseStudiesForScreen";
 
 // "Problems Which I Solved" — the second section of the page, right after
 // the hero. The heading/divider block below is one shared implementation
@@ -139,20 +137,11 @@ export default function ProblemsSolved() {
 
           Per request, the card design below is now a genuine three-way
           split — phone/tablet/desktop each get their own stack component,
-          gated the same "all three variants coexist in the DOM, CSS picks
-          one" way the hero itself does. Desktop's own
-          stack is now CaseStudyCarousel (a pinned sideways carousel with
-          bent side cards), which replaced the old sticky scale-stack. */}
+          and only the one for this screen is built (CaseStudiesForScreen).
+          Desktop's own stack is CaseStudyCarousel (a pinned sideways
+          carousel with bent side cards). */}
       <div className="mt-8 tablet:mt-[32px] desktop:mt-[72px]">
-        <div className="hidden desktop:block">
-          <CaseStudyCarousel />
-        </div>
-        <div className="hidden tablet:block desktop:hidden">
-          <TabletCaseStudyStack />
-        </div>
-        <div className="tablet:hidden">
-          <PhoneCaseStudyStack />
-        </div>
+        <CaseStudiesForScreen />
       </div>
     </section>
   );
