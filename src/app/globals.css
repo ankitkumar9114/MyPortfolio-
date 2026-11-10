@@ -145,6 +145,21 @@ body {
   }
 }
 
+/* The mandala cursor's spin (see CustomCursor); still for reduced motion. */
+.cursor-mandala {
+  animation: cursor-mandala-spin 8s linear infinite;
+}
+@keyframes cursor-mandala-spin {
+  to {
+    rotate: 360deg;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .cursor-mandala {
+    animation: none;
+  }
+}
+
 ::selection {
   background: var(--accent);
   color: #fff;
