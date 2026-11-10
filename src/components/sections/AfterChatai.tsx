@@ -2,6 +2,7 @@
 
 import { linkedinEmbedUrl, useLinkedinPosts } from "@/lib/linkedinPosts";
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { useSwipeableMarquee } from "@/lib/useSwipeableMarquee";
 import { preconnect } from "react-dom";
 
 // The section after the chatai ("My Fridge Magnet Collection"): once the
@@ -51,6 +52,9 @@ export default function AfterChatai() {
   const phone = useSyncExternalStore(subscribePhone, () => window.matchMedia(PHONE_MQ).matches, () => false);
   const zoom = cardScale * (tablet ? TABLET_CARD_FACTOR : phone ? PHONE_CARD_FACTOR : 1);
   const sectionRef = useRef<HTMLElement>(null);
+  const postsTrackRef = useRef<HTMLDivElement>(null);
+  // phone: the posts row can also be swiped (it keeps going by itself after)
+  useSwipeableMarquee(postsTrackRef, POSTS_LOOP_S);
   const [inView, setInView] = useState(false);
   // The embeds load once the section is within about two screens of the
   // window (not with the page: the loader no longer waits for them), so
@@ -138,7 +142,7 @@ export default function AfterChatai() {
         className="posts-marquee relative mt-[48px] w-full overflow-hidden pb-[60px] tablet:mt-[72px] tablet:pb-[140px] desktop:mt-[var(--posts-gap)] desktop:pb-[var(--posts-bottom)]"
         style={{ ["--posts-gap" as string]: `${POSTS_GAP}px`, ["--posts-bottom" as string]: `${POSTS_BOTTOM}px` }}
       >
-        <div className="animate-marquee flex w-max items-start" style={{ animationDuration: `${POSTS_LOOP_S}s` }}>
+        <div ref={postsTrackRef} className="animate-marquee flex w-max items-start" style={{ animationDuration: `${POSTS_LOOP_S}s` }}>
           {[0, 1].map((copy) =>
             LINKEDIN_POSTS.map((post) => {
               const card = (

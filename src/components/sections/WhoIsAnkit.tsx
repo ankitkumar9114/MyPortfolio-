@@ -19,7 +19,7 @@ export function useSectionGap() {
   return desktop ? SECTION_GAP_DESKTOP : SECTION_GAP;
 }
 
-// The "Who is this Ankit?" section: heading + "other than work" rule, the
+// The "Who is this Ankit?" section: heading + "about me" rule, the
 // sunflower stamp photo with the scrolling Hindi name band behind it, and the
 // scroll-highlight intro paragraph. It sits on the pink panel after the TV
 // zoom; TvOnCabinet places it (its top offset comes from the zoom geometry)
@@ -54,7 +54,7 @@ export default function WhoIsAnkit() {
             letterSpacing: "0.04em",
           }}
         >
-          other than work
+          about me
         </span>
         <span aria-hidden="true" className="h-[2px] min-w-0 w-[12vw] flex-none bg-white tablet:w-[10vw] tablet:flex-none desktop:flex-1" />
       </div>

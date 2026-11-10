@@ -420,3 +420,11 @@ body {
 [data-offscreen] * {
   animation-play-state: paused !important;
 }
+
+/* Swipeable rows on phones (useSwipeableMarquee): scrollable, no scrollbar. */
+.no-scrollbar {
+  scrollbar-width: none;
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
