@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Arvo, Caveat, Manrope, Merriweather } from "next/font/google";
 import Script from "next/script";
 import "./globals.css";
@@ -41,17 +41,56 @@ const manropeFont = Manrope({
   weight: ["400", "500", "600", "700"],
 });
 
+// Site-wide metadata. The link-preview image is src/app/opengraph-image.jpg
+// (1200x630, picked up automatically); /sitemap.xml and /robots.txt come from
+// sitemap.ts and robots.ts. Pages can override the title (template below).
+const SITE_URL = "https://www.ankitux.co.in";
+const DESCRIPTION =
+  "Ankit Kumar Tiwari — UI/UX and product designer designing and building products on which startups bet: case studies, product work, vibe coding and resume.";
+
 export const metadata: Metadata = {
-  title: "Ankit's Portfolio",
-  description: "Ankit Kumar Tiwari — UI/UX and product designer designing and building products on which startups bet.",
+  metadataBase: new URL(SITE_URL),
+  title: { default: "Ankit's Portfolio", template: "%s | Ankit's Portfolio" },
+  description: DESCRIPTION,
+  applicationName: "Ankit's Portfolio",
+  authors: [{ name: "Ankit Kumar Tiwari", url: SITE_URL }],
+  creator: "Ankit Kumar Tiwari",
+  publisher: "Ankit Kumar Tiwari",
+  keywords: [
+    "Ankit Kumar Tiwari",
+    "Ankit Tiwari",
+    "UI/UX designer",
+    "product designer",
+    "UX designer portfolio",
+    "UI UX designer India",
+    "vibe coding",
+    "case studies",
+    "design systems",
+  ],
+  alternates: { canonical: "/" },
   openGraph: {
-    title: "Ankit's Portfolio",
-    description: "Ankit Kumar Tiwari — UI/UX and product designer designing and building products on which startups bet.",
-    url: "https://www.ankitux.co.in",
-    siteName: "Ankit's Portfolio",
     type: "website",
+    url: "/",
+    siteName: "Ankit's Portfolio",
+    title: "Ankit's Portfolio",
+    description: DESCRIPTION,
+    locale: "en_IN",
   },
+  twitter: {
+    card: "summary_large_image",
+    title: "Ankit's Portfolio",
+    description: DESCRIPTION,
+  },
+  robots: {
+    index: true,
+    follow: true,
+    googleBot: { index: true, follow: true, "max-image-preview": "large", "max-snippet": -1 },
+  },
+  formatDetection: { telephone: false, email: false, address: false },
 };
+
+// browser UI colour (address bar on phones) = the hero's deep red
+export const viewport: Viewport = { themeColor: "#4D050C" };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
