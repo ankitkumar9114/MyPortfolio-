@@ -18,6 +18,8 @@ const TILE = { w: 49, h: 18 }; // band tile
 const BAND = 20; // border thickness on screen (px)
 const OUTER = "#710004"; // band gradient, outer edge
 const INNER = "#A0251E"; // band gradient, inner edge
+const GOLD = "#F6A225"; // the ornaments' gold
+const GOLD_LINE = 2; // px, the inner gold line
 
 export default function MughalFrame() {
   const [size, setSize] = useState({ w: 1440, h: 900 });
@@ -94,6 +96,8 @@ export default function MughalFrame() {
         <path d={`M0 0V${h}L${t} ${h - t}V${t}Z`} fill="url(#band-left)" />
         <path d={`M${w} 0V${h}L${w - t} ${h - t}V${t}Z`} fill="url(#band-right)" />
         {tiles}
+        {/* gold line along the band's inner edge, all the way round */}
+        <rect x={t - GOLD_LINE / 2} y={t - GOLD_LINE / 2} width={w - 2 * t + GOLD_LINE} height={h - 2 * t + GOLD_LINE} fill="none" stroke={GOLD} strokeWidth={GOLD_LINE} />
       </svg>
       {corner(0, 0, "none")}
       {corner(w - cw, 0, "scaleX(-1)")}
