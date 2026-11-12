@@ -236,11 +236,22 @@ export default function MughalFrame({ progress }: { progress?: number }) {
       {corner(w - cw, h - ch, "scale(-1, -1)")}
       {/* "LOADING" and the percentage in the bottom-right corner, inside the
           frame - same type as the current loader (Preloader.tsx) */}
-      <div className="absolute flex flex-col items-end text-white" style={{ left: r2(w - inset - 28), top: r2(h - inset - 22), transform: "translate(-100%, -100%)" }} role="status" aria-label={`Loading ${pct}%`}>
-        <span className="font-[family-name:var(--font-manrope)] text-[12px] font-bold uppercase leading-none tracking-[0.28em] desktop:text-[14px]">Loading</span>
-        <span className="mt-[6px] font-[family-name:var(--font-arvo)] font-bold leading-none tabular-nums" style={{ fontSize: "clamp(40px, 5vw, 72px)" }}>
-          {pct}
-          <span className="ml-[2px] align-top text-[0.4em]">%</span>
+      <div className="absolute grid text-white" style={{ left: r2(w - inset - 28), top: r2(h - inset - 22), transform: "translate(-100%, -100%)" }} role="status" aria-label={`Loading ${pct}%`}>
+        {/* the letters of LOADING spread to span exactly the width of "100%",
+            centred over the number */}
+        <span aria-hidden="true" className="flex justify-between font-[family-name:var(--font-manrope)] text-[12px] font-bold uppercase leading-none desktop:text-[14px]">
+          {"Loading".split("").map((c, i) => (
+            <span key={i}>{c}</span>
+          ))}
+        </span>
+        <span aria-hidden="true" className="mt-[6px] grid font-[family-name:var(--font-arvo)] font-bold leading-none tabular-nums" style={{ fontSize: "clamp(40px, 5vw, 72px)" }}>
+          {/* an invisible "100%" sets the width; the live number sits centred on it */}
+          {[100, pct].map((n, i) => (
+            <span key={i} className={`col-start-1 row-start-1 text-center ${i === 0 ? "invisible" : ""}`}>
+              {n}
+              <span className="ml-[2px] align-top text-[0.4em]">%</span>
+            </span>
+          ))}
         </span>
       </div>
       {/* flying Ankit and flying Claude, over the frame */}
