@@ -2,6 +2,7 @@
 
 import { useEffect, useState, type ReactNode } from "react";
 import { PLANT } from "./cornerPlantEdge";
+import { MANDALA_EDGE } from "./mandalaEdge";
 
 // Frame for the new loader (border only, for now): the teal textured
 // background (loader-bg-teal.webp) inside a border made of two SVGs from
@@ -27,26 +28,6 @@ const INNER = "#A0251E"; // band gradient, inner edge
 const GOLD = "#F6A225"; // the ornaments' gold
 const GOLD_LINE = 2; // px, the inner gold line
 const BLACK_LINE = GOLD_LINE; // px, the black line inside the gold one (same thickness)
-
-// The dotted outline round the mandala (as in the reference): four
-// onion-dome points (top, right, bottom, left) joined by round lobes on the
-// diagonals, with a small notch where each lobe meets a point. Unit size:
-// the points sit at radius 1.
-const OUTLINE = (() => {
-  const q = (n: number) => Math.round(n * 1000) / 1000;
-  // one quarter, top point -> right point, then turned for the other three
-  const quarter: [number, number][][] = [
-    [[0.04, -0.9], [0.19, -0.8], [0.27, -0.72]], // ogee down from the top point
-    [[0.47, -0.89], [0.89, -0.47], [0.72, -0.27]], // the round lobe
-    [[0.8, -0.19], [0.9, -0.04], [1, 0]], // ogee into the right point
-  ];
-  let d = "M0 -1";
-  for (let k = 0; k < 4; k++) {
-    const a = (k * Math.PI) / 2, c = Math.cos(a), sn = Math.sin(a);
-    for (const seg of quarter) d += "C" + seg.map(([x, y]) => `${q(x * c - y * sn)} ${q(x * sn + y * c)}`).join(" ");
-  }
-  return d + "Z";
-})();
 
 export default function MughalFrame() {
   const [size, setSize] = useState({ w: 1440, h: 900 });
@@ -118,7 +99,6 @@ export default function MughalFrame() {
   // the mandala, centred, its height 51% of the screen's shorter side
   const mh = Math.min(w, h) * 0.512, mw = (mh * MANDALA.w) / MANDALA.h;
   const mandala = { left: r2(w / 2 - mw / 2), top: r2(h / 2 - mh / 2), width: r2(mw), height: r2(mh) };
-  const outlineR = mh * 0.61; // the dotted outline's points, a little beyond the petals
   const ball = Math.max(12, Math.min(w, h) * 0.022); // the energy ball's size
   const pieceImg = (p: Piece, i: number) => (
     // eslint-disable-next-line @next/next/no-img-element -- decorative
@@ -194,9 +174,9 @@ export default function MughalFrame() {
       {/* the gold mandala (raw-images/mandala-lines.svg, lines in the reference painting's muted ochre) in the centre, behind the figures' hands */}
       {/* eslint-disable-next-line @next/next/no-img-element -- decorative SVG */}
       <img src={`${P}mandala.svg`} alt="" aria-hidden="true" draggable={false} className="pointer-events-none absolute select-none" style={{ ...mandala, opacity: 0.3 }} />
-      {/* the dotted outline round the mandala, same ochre and opacity */}
-      <svg aria-hidden="true" className="pointer-events-none absolute" viewBox="-1.06 -1.06 2.12 2.12" style={{ left: r2(w / 2 - outlineR * 1.06), top: r2(h / 2 - outlineR * 1.06), width: r2(outlineR * 2.12), height: r2(outlineR * 2.12), opacity: 0.3 }}>
-        <path d={OUTLINE} fill="none" stroke="#B9823A" strokeWidth={0.02} strokeLinecap="round" strokeDasharray="0.0001 0.04" />
+      {/* a dotted line hugging the mandala's own edge, a little outside it, same ochre and opacity */}
+      <svg aria-hidden="true" className="pointer-events-none absolute overflow-visible" viewBox="0 0 1 1" preserveAspectRatio="none" style={{ ...mandala, opacity: 0.3 }}>
+        <path d={MANDALA_EDGE} fill="none" stroke="#B9823A" strokeWidth={0.009} strokeLinecap="round" strokeDasharray="0.0001 0.021" />
       </svg>
       {/* the energy ball in the centre: a soft breathing glow, and a small
           glowing sphere whose edge keeps wobbling (globals.css) */}
