@@ -17,6 +17,7 @@ const P = "/graphics/loader-frame/";
 // the flying figures (cropped webp sizes) and where each fingertip is
 const ANKIT = { w: 1390, h: 835, tip: [1388, 169] as const };
 const CLAUDE = { w: 1235, h: 716, tip: [1, 336] as const };
+const CLOUD = { w: 2032, h: 565 }; // loader-cloud.webp
 const CORNER = { w: 39, h: 40 }; // top-left L, arms 18 thick
 const TILE = { w: 49, h: 18 }; // band tile
 const BAND = 20; // border thickness on screen (px)
@@ -78,6 +79,14 @@ export default function MughalFrame() {
   const ankit = { left: meetX - gap - ANKIT.tip[0] * fs, top: meetY + 20 * fs - ANKIT.tip[1] * fs, width: ANKIT.w * fs, height: ANKIT.h * fs };
   const claude = { left: meetX + gap - CLAUDE.tip[0] * fs, top: meetY - 20 * fs - CLAUDE.tip[1] * fs, width: CLAUDE.w * fs, height: CLAUDE.h * fs };
 
+  // --- clouds along the bottom (as in the reference painting): one in the
+  // bottom-left under Ankit, the same cloud mirrored in the bottom-right
+  // under Claude. In front of the figures, tucked a little under the frame.
+  const cloudW = Math.max(180, w * 0.36), cloudH = (cloudW * CLOUD.h) / CLOUD.w;
+  const cloudTop = h - inset - cloudH * 0.92;
+  const cloudL = { left: inset - cloudW * 0.08, top: cloudTop, width: cloudW, height: cloudH };
+  const cloudR = { left: w - inset - cloudW * 0.92, top: cloudTop, width: cloudW, height: cloudH, transform: "scaleX(-1)" };
+
   const corner = (left: number, top: number, flip: string) => (
     // eslint-disable-next-line @next/next/no-img-element -- decorative SVG
     <img
@@ -97,6 +106,11 @@ export default function MughalFrame() {
       <img src="/images/flying-ankit.webp" alt="" aria-hidden="true" draggable={false} className="pointer-events-none absolute select-none" style={ankit} />
       {/* eslint-disable-next-line @next/next/no-img-element -- decorative figure */}
       <img src="/images/flying-claude.webp" alt="" aria-hidden="true" draggable={false} className="pointer-events-none absolute select-none" style={claude} />
+      {/* clouds along the bottom */}
+      {/* eslint-disable-next-line @next/next/no-img-element -- decorative */}
+      <img src="/images/loader-cloud.webp" alt="" aria-hidden="true" draggable={false} className="pointer-events-none absolute select-none" style={cloudL} />
+      {/* eslint-disable-next-line @next/next/no-img-element -- decorative */}
+      <img src="/images/loader-cloud.webp" alt="" aria-hidden="true" draggable={false} className="pointer-events-none absolute select-none" style={cloudR} />
       <svg width={w} height={h} viewBox={`0 0 ${w} ${h}`} className="absolute inset-0 block" aria-hidden="true">
         {/* the band: a gradient from the outer edge (#710004) to the inner
             edge (#A0251E) on each side, mitred at the corners; the SVG tiles
