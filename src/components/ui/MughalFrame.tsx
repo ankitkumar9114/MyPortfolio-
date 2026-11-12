@@ -29,8 +29,25 @@ const GOLD = "#F6A225"; // the ornaments' gold
 const GOLD_LINE = 2; // px, the inner gold line
 const BLACK_LINE = GOLD_LINE; // px, the black line inside the gold one (same thickness)
 
-export default function MughalFrame() {
+// `progress` (0-100) drives the percentage; without it (the preview page)
+// the number counts up on its own so the corner can be seen working.
+export default function MughalFrame({ progress }: { progress?: number }) {
   const [size, setSize] = useState({ w: 1440, h: 900 });
+  const [demo, setDemo] = useState(0);
+  useEffect(() => {
+    if (progress !== undefined) return;
+    // preview only: 0 -> 100 over ~4s (easing out), hold, then again
+    let raf = 0, start = performance.now();
+    const tick = (now: number) => {
+      const t = (now - start) / 4000;
+      if (t > 1.6) start = now;
+      setDemo(Math.min(100, Math.floor(100 * (1 - Math.pow(1 - Math.min(1, t), 2)))));
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [progress]);
+  const pct = Math.round(progress ?? demo);
   useEffect(() => {
     const fit = () => setSize({ w: window.innerWidth, h: window.innerHeight });
     fit();
@@ -217,6 +234,15 @@ export default function MughalFrame() {
       {corner(w - cw, 0, "scaleX(-1)")}
       {corner(0, h - ch, "scaleY(-1)")}
       {corner(w - cw, h - ch, "scale(-1, -1)")}
+      {/* "LOADING" and the percentage in the bottom-right corner, inside the
+          frame - same type as the current loader (Preloader.tsx) */}
+      <div className="absolute flex flex-col items-end text-white" style={{ left: r2(w - inset - 28), top: r2(h - inset - 22), transform: "translate(-100%, -100%)" }} role="status" aria-label={`Loading ${pct}%`}>
+        <span className="font-[family-name:var(--font-manrope)] text-[12px] font-bold uppercase leading-none tracking-[0.28em] desktop:text-[14px]">Loading</span>
+        <span className="mt-[6px] font-[family-name:var(--font-arvo)] font-bold leading-none tabular-nums" style={{ fontSize: "clamp(40px, 5vw, 72px)" }}>
+          {pct}
+          <span className="ml-[2px] align-top text-[0.4em]">%</span>
+        </span>
+      </div>
       {/* flying Ankit and flying Claude, over the frame */}
       {figure("/images/flying-ankit.webp", ankit)}
       {figure("/images/flying-claude.webp", claude)}
