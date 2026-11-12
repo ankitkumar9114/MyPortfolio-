@@ -19,7 +19,7 @@ const BAND = 20; // border thickness on screen (px)
 const OUTER = "#710004"; // band gradient, outer edge
 const INNER = "#A0251E"; // band gradient, inner edge
 const GOLD = "#F6A225"; // the ornaments' gold
-const GOLD_LINE = 2; // px, the inner gold line
+const GOLD_LINE = 4; // px, the inner gold line
 
 export default function MughalFrame() {
   const [size, setSize] = useState({ w: 1440, h: 900 });
