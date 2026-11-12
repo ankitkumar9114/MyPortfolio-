@@ -18,7 +18,7 @@ const P = "/graphics/loader-frame/";
 // 1440x1024; the pieces below are placed in those design units, each kept
 // against its nearest edge(s) and scaled by DS (see below).
 const DESIGN = { w: 1440, h: 1024 };
-const MANDALA = { w: 1311, h: 1310 }; // mandala.svg (raw-images/mandala-lines.svg, in gold)
+const MANDALA = { w: 1311, h: 1310 }; // mandala.svg (raw-images/mandala-lines.svg, lines in the reference painting's muted ochre)
 const CORNER = { w: 39, h: 40 }; // top-left L, arms 18 thick
 const TILE = { w: 49, h: 18 }; // band tile
 const BAND = 20; // border thickness on screen (px)
@@ -169,7 +169,7 @@ export default function MughalFrame() {
       <img src="/images/corner-plant.webp" alt="" aria-hidden="true" draggable={false} className="pointer-events-none absolute select-none" style={{ left: w - inset - pw, top: inset, width: pw, height: ph, transform: "scaleX(-1)" }} />
       {/* red flower plants and clouds */}
       {pieces.map(pieceImg)}
-      {/* the gold mandala (raw-images/mandala-lines.svg, in gold) in the centre, behind the figures' hands */}
+      {/* the gold mandala (raw-images/mandala-lines.svg, lines in the reference painting's muted ochre) in the centre, behind the figures' hands */}
       {/* eslint-disable-next-line @next/next/no-img-element -- decorative SVG */}
       <img src={`${P}mandala.svg`} alt="" aria-hidden="true" draggable={false} className="pointer-events-none absolute select-none" style={mandala} />
       <svg width={w} height={h} viewBox={`0 0 ${w} ${h}`} className="absolute inset-0 block" aria-hidden="true">
