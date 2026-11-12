@@ -18,6 +18,7 @@ const P = "/graphics/loader-frame/";
 // 1440x1024; the pieces below are placed in those design units, each kept
 // against its nearest edge(s) and scaled by DS (see below).
 const DESIGN = { w: 1440, h: 1024 };
+const MANDALA = { w: 803, h: 735 }; // mandala.svg
 const CORNER = { w: 39, h: 40 }; // top-left L, arms 18 thick
 const TILE = { w: 49, h: 18 }; // band tile
 const BAND = 20; // border thickness on screen (px)
@@ -94,6 +95,9 @@ export default function MughalFrame() {
   const ankit = { w: 701.03, h: 520.84, cx: L(-52 + 707.24 / 2), cy: B(495.61 + 529.22 / 2), rotate: -0.69, shadow: "0 4px 12px rgba(0,0,0,0.5)", shoulder: [960 / 1455, 360 / 1081], tip: [1438 / 1455, 160 / 1081] };
   const claude = { w: 683.63, h: 437.3, cx: R(718.27 + 810.44 / 2), cy: T(-40 + 718.11 / 2), rotate: -29.63, shadow: "0 4px 20px rgba(0,0,0,0.8)", shoulder: [480 / 1568, 375 / 1003], tip: [52 / 1568, 374 / 1003] };
   const r2 = (n: number) => Math.round(n * 100) / 100; // same numbers on server and client
+  // the mandala, centred, its height 68% of the screen's shorter side
+  const mh = Math.min(w, h) * 0.68, mw = (mh * MANDALA.w) / MANDALA.h;
+  const mandala = { left: r2(w / 2 - mw / 2), top: r2(h / 2 - mh / 2), width: r2(mw), height: r2(mh) };
   const pieceImg = (p: Piece, i: number) => (
     // eslint-disable-next-line @next/next/no-img-element -- decorative
     <img
@@ -165,6 +169,9 @@ export default function MughalFrame() {
       <img src="/images/corner-plant.webp" alt="" aria-hidden="true" draggable={false} className="pointer-events-none absolute select-none" style={{ left: w - inset - pw, top: inset, width: pw, height: ph, transform: "scaleX(-1)" }} />
       {/* red flower plants and clouds */}
       {pieces.map(pieceImg)}
+      {/* the gold mandala (raw-images/mandala.svg) in the centre, behind the figures' hands */}
+      {/* eslint-disable-next-line @next/next/no-img-element -- decorative SVG */}
+      <img src={`${P}mandala.svg`} alt="" aria-hidden="true" draggable={false} className="pointer-events-none absolute select-none" style={mandala} />
       <svg width={w} height={h} viewBox={`0 0 ${w} ${h}`} className="absolute inset-0 block" aria-hidden="true">
         {/* the band: a gradient from the outer edge (#710004) to the inner
             edge (#A0251E) on each side, mitred at the corners; the SVG tiles
