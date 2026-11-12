@@ -81,11 +81,12 @@ export default function MughalFrame() {
 
   // --- clouds along the bottom (as in the reference painting): one in the
   // bottom-left under Ankit, the same cloud mirrored in the bottom-right
-  // under Claude. In front of the figures, tucked a little under the frame.
-  const cloudW = Math.max(180, w * 0.36), cloudH = (cloudW * CLOUD.h) / CLOUD.w;
+  // under Claude. In front of the figures, 25% bigger, with a third of each
+  // cloud pushed out past the side of the frame (hidden).
+  const cloudW = 1.25 * Math.max(180, w * 0.36), cloudH = (cloudW * CLOUD.h) / CLOUD.w;
   const cloudTop = h - inset - cloudH * 0.92;
-  const cloudL = { left: inset - cloudW * 0.08, top: cloudTop, width: cloudW, height: cloudH };
-  const cloudR = { left: w - inset - cloudW * 0.92, top: cloudTop, width: cloudW, height: cloudH, transform: "scaleX(-1)" };
+  const cloudL = { left: inset - cloudW / 3, top: cloudTop, width: cloudW, height: cloudH };
+  const cloudR = { left: w - inset - (cloudW * 2) / 3, top: cloudTop, width: cloudW, height: cloudH, transform: "scaleX(-1)" };
 
   const corner = (left: number, top: number, flip: string) => (
     // eslint-disable-next-line @next/next/no-img-element -- decorative SVG
