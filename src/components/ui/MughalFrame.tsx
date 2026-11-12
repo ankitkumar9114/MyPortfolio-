@@ -1,32 +1,20 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 
 // Frame for the new loader (border only, for now): the teal textured
-// background (loader-bg-teal.webp) inside a border built from the painted
-// pieces in raw-images/border asset.png, cut out into
-// public/images/loader-frame/: four corners, a top/bottom strip, a side
-// strip and the bottom-centre lotus crest. The strips repeat as mirrored
-// tiles (strip + its reflection), so there is never a visible seam.
-//
-// The pieces were painted at different scales (the corners' band is ~25px
-// thick, the strips are 60/56px, the crest's band 35px), so each is scaled
-// to the corners' band; the whole frame scales with the window (KC).
+// background (loader-bg-teal.webp) inside a border made of two SVGs from
+// raw-images (public/graphics/loader-frame/):
+//   corner.svg  - an L-shaped top-right corner (134x136, arms 54 thick),
+//                 mirrored into the other three corners
+//   border.svg  - a 105x54 band tile, repeated along the top and bottom;
+//                 border-vertical.svg is the same tile turned 90° for the sides
+// Each edge holds a whole number of tiles (stretched a hair to fit exactly),
+// so a tile is never cut off at a corner. Scales with the window (k).
 
-const P = "/images/loader-frame/";
-// natural sizes of the cut-out pieces (px)
-const TL = { w: 398, h: 301 };
-const TR = { w: 400, h: 303 };
-const BL = { w: 323, h: 183 };
-const BR = { w: 334, h: 195 };
-const CREST = { w: 607, h: 111, band: 35 };
-// strips: strip-top-tile (2826x60) and strip-side-tile (56x1240), each a
-// piece plus its reflection, repeated
-// the corners' band thickness, which the strips are matched to
-const BAND_TOP = 25;
-const BAND_BOTTOM = 27;
-const BAND_SIDE = 28;
-const OVERLAP = 6; // strips run this far under the corners (no gaps from rounding)
+const P = "/graphics/loader-frame/";
+const CORNER = { w: 134, h: 136 };
+const TILE = { w: 105, h: 54 }; // band thickness = 54
 
 export default function MughalFrame() {
   const [size, setSize] = useState({ w: 1440, h: 900 });
@@ -37,44 +25,48 @@ export default function MughalFrame() {
     return () => window.removeEventListener("resize", fit);
   }, []);
   const { w, h } = size;
-  // corner scale: full size on wide screens, down to 42% on phones
-  const kc = Math.min(1, Math.max(0.42, w / 1600));
-  const bt = BAND_TOP * kc, bb = BAND_BOTTOM * kc, bs = BAND_SIDE * kc;
-  const crestK = bb / CREST.band;
-  const img = (src: string, x: number, y: number, pw: number, ph: number, flip = "") => (
-    // eslint-disable-next-line @next/next/no-img-element -- decorative frame piece sized by JS
+  const k = Math.min(1, Math.max(0.5, w / 1440)); // full size from 1440px wide, half on phones
+  const cw = CORNER.w * k, ch = CORNER.h * k, t = TILE.h * k;
+
+  // a run of whole tiles between the corners (stretched a hair to fit)
+  const count = (len: number) => Math.max(1, Math.round(len / (TILE.w * k)));
+  const hLen = w - 2 * cw, vLen = h - 2 * ch;
+  const hn = count(hLen), vn = count(vLen);
+  const hTile = hLen / hn, vTile = vLen / vn;
+  const SEAM = 1; // each tile overlaps the next by 1px, so no hairline gaps
+
+  // tiles as <image>s in one SVG
+  const tiles: ReactNode[] = [];
+  for (let i = 0; i < hn; i++) {
+    const x = cw + i * hTile;
+    for (const y of [0, h - t]) tiles.push(<image key={`h${i}-${y}`} href={`${P}border.svg`} x={x} y={y} width={hTile + SEAM} height={t} preserveAspectRatio="none" />);
+  }
+  for (let i = 0; i < vn; i++) {
+    const y = ch + i * vTile;
+    for (const x of [0, w - t]) tiles.push(<image key={`v${i}-${x}`} href={`${P}border-vertical.svg`} x={x} y={y} width={t} height={vTile + SEAM} preserveAspectRatio="none" />);
+  }
+
+  const corner = (left: number, top: number, flip: string) => (
+    // eslint-disable-next-line @next/next/no-img-element -- decorative SVG
     <img
-      key={src + flip}
-      src={P + src}
+      key={flip}
+      src={`${P}corner.svg`}
       alt=""
       aria-hidden="true"
       draggable={false}
       className="absolute select-none"
-      style={{ left: x, top: y, width: pw, height: ph, transform: flip || undefined }}
-    />
-  );
-  const tile = (src: string, x: number, y: number, pw: number, ph: number, bgSize: string, pos: string, flip = "") => (
-    <div
-      key={src + x + y}
-      aria-hidden="true"
-      className="absolute"
-      style={{ left: x, top: y, width: pw, height: ph, backgroundImage: `url(${P}${src})`, backgroundRepeat: "repeat", backgroundSize: bgSize, backgroundPosition: pos, transform: flip || undefined }}
+      style={{ left, top, width: cw, height: ch, transform: flip }}
     />
   );
   return (
     <div className="fixed inset-0 overflow-hidden" style={{ background: "#002F2A url('/images/loader-bg-teal.webp') center / cover" }}>
-      {/* strips (under the corners) */}
-      {tile("strip-top-tile.webp", TL.w * kc - OVERLAP, 0, w - (TL.w + TR.w) * kc + 2 * OVERLAP, bt, `auto ${bt}px`, "center top")}
-      {tile("strip-top-tile.webp", BL.w * kc - OVERLAP, h - bb, w - (BL.w + BR.w) * kc + 2 * OVERLAP, bb, `auto ${bb}px`, "center top", "scaleY(-1)")}
-      {tile("strip-side-tile.webp", 0, TL.h * kc - OVERLAP, bs, h - (TL.h + BL.h) * kc + 2 * OVERLAP, `${bs}px auto`, "left center")}
-      {tile("strip-side-tile.webp", w - bs, TR.h * kc - OVERLAP, bs, h - (TR.h + BR.h) * kc + 2 * OVERLAP, `${bs}px auto`, "left center", "scaleX(-1)")}
-      {/* corners */}
-      {img("corner-tl.webp", 0, 0, TL.w * kc, TL.h * kc)}
-      {img("corner-tr.webp", w - TR.w * kc, 0, TR.w * kc, TR.h * kc)}
-      {img("corner-bl.webp", 0, h - BL.h * kc, BL.w * kc, BL.h * kc)}
-      {img("corner-br.webp", w - BR.w * kc, h - BR.h * kc, BR.w * kc, BR.h * kc)}
-      {/* bottom-centre lotus crest, over the bottom strip */}
-      {img("bottom-center.webp", (w - CREST.w * crestK) / 2, h - CREST.h * crestK, CREST.w * crestK, CREST.h * crestK)}
+      <svg width={w} height={h} viewBox={`0 0 ${w} ${h}`} className="absolute inset-0 block" aria-hidden="true">
+        {tiles}
+      </svg>
+      {corner(w - cw, 0, "none")}
+      {corner(0, 0, "scaleX(-1)")}
+      {corner(w - cw, h - ch, "scaleY(-1)")}
+      {corner(0, h - ch, "scale(-1, -1)")}
     </div>
   );
 }
