@@ -10,11 +10,12 @@ import { useEffect, useState, type ReactNode } from "react";
 //   border.svg  - a 105x54 band tile, repeated along the top and bottom;
 //                 border-vertical.svg is the same tile turned 90° for the sides
 // Each edge holds a whole number of tiles (stretched a hair to fit exactly),
-// so a tile is never cut off at a corner. Scales with the window (k).
+// so a tile is never cut off at a corner. The band is BAND px thick.
 
 const P = "/graphics/loader-frame/";
 const CORNER = { w: 134, h: 136 };
-const TILE = { w: 105, h: 54 }; // band thickness = 54
+const TILE = { w: 105, h: 54 }; // band thickness = 54 in the SVGs
+const BAND = 16; // border thickness on screen (px)
 
 export default function MughalFrame() {
   const [size, setSize] = useState({ w: 1440, h: 900 });
@@ -25,7 +26,7 @@ export default function MughalFrame() {
     return () => window.removeEventListener("resize", fit);
   }, []);
   const { w, h } = size;
-  const k = Math.min(1, Math.max(0.5, w / 1440)); // full size from 1440px wide, half on phones
+  const k = BAND / TILE.h; // the band is BAND px thick on every screen; tiles and corners scale with it
   const cw = CORNER.w * k, ch = CORNER.h * k, t = TILE.h * k;
 
   // a run of whole tiles between the corners (stretched a hair to fit)
