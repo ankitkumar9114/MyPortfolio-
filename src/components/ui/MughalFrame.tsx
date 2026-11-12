@@ -33,12 +33,50 @@ const GOLD = "#F6A225"; // the ornaments' gold
 const GOLD_LINE = 2; // px, the inner gold line
 const TOUCH = 0.5; // px each fingertip stops short of the centre at 100% (they touch)
 const BLACK_LINE = GOLD_LINE;
-const FLIGHT_MIN_S = 2.6; // the figures never fly in faster than this (0 -> 100%)
+const FLIGHT_MIN_S = 2.6; // the figures' flight time (0 -> 100%) for the mandala ending, with the page loaded
 // the golden ending's build-up: the orb shows alone for ORB_HOLD_S, then the
 // characters fly in over at least GOLD_FLIGHT_S, so the touch is at 2.2 s
 // (when the page is already loaded)
 const ORB_HOLD_S = 0.5;
 const GOLD_FLIGHT_S = 1.7;
+const ORB_BURST_S = 0.35; // the orb bursting outwards at the touch
+
+// One step of the figures' flight. Two limits, whichever is behind:
+//  - the schedule: a smooth ease-in-out from 0 to 100 over the flight time,
+//    after the hold (so with the page loaded the touch is exactly at
+//    hold + flight - 2.2 s for the golden ending)
+//  - real loading: `follow` eases towards the real progress, so on a slow
+//    load the figures wait for it instead of arriving early
+// The shown value never goes back.
+type FlightState = { shown: number; follow: number };
+function flightStep(st: FlightState, elapsed: number, dt: number, target: number, reveal: LoaderReveal) {
+  const golden = reveal === "golden";
+  const hold = golden ? ORB_HOLD_S : 0, flight = golden ? GOLD_FLIGHT_S : FLIGHT_MIN_S;
+  const u = Math.min(1, Math.max(0, (elapsed - hold) / flight));
+  const scheduled = 100 * (0.5 - Math.cos(Math.PI * u) / 2);
+  if (target > st.follow) st.follow = Math.min(target, st.follow + Math.max((target - st.follow) * dt * 4, 10 * dt));
+  st.shown = Math.max(st.shown, Math.min(scheduled, st.follow));
+  if (st.shown > 99.95) st.shown = 100;
+}
+
+// The figures' flight with everything already loaded (progress 100), as a
+// function of time: the same steps the live loop takes, at a fixed rate, so
+// the preview can show any moment exactly. `shown` 0..100; `touchAt` (s) is
+// when they touch.
+export function flightAt(seconds: number, reveal: LoaderReveal) {
+  const dt = 1 / 240, st: FlightState = { shown: 0, follow: 0 };
+  let t = 0, shownAt = 0, touchAt = Infinity;
+  while (t < 30) {
+    if (t <= seconds) shownAt = st.shown;
+    if (st.shown >= 100) {
+      touchAt = t;
+      break;
+    }
+    t += dt;
+    flightStep(st, t, dt, 100, reveal);
+  }
+  return { shown: seconds >= touchAt ? 100 : shownAt, touchAt };
+}
 
 // `progress` (0-100, real loading progress from MughalLoader) drives the
 // percentage and the figures' flight.
@@ -49,7 +87,12 @@ const GOLD_FLIGHT_S = 1.7;
 //               (mandalaReveal.ts: CSS/SVG + GSAP)
 //   "golden"  - a three.js golden energy explosion and wave (goldenReveal.ts)
 // `onReveal` fires as the site starts to show, `onDone` once the loader is gone.
-export default function MughalFrame({ progress = 0, reveal = LOADER_REVEAL, onReveal, onDone }: { progress?: number; reveal?: LoaderReveal; onReveal?: () => void; onDone?: () => void }) {
+//
+// `scrub` (the loader preview only): instead of playing, show the moment
+// `scrub` seconds from the start - before the touch worked out from
+// flightAt, after it by moving the ending's timeline - so any frame can be
+// reached, forwards or backwards; nothing is torn down at the end.
+export default function MughalFrame({ progress = 0, reveal = LOADER_REVEAL, onReveal, onDone, scrub }: { progress?: number; reveal?: LoaderReveal; onReveal?: () => void; onDone?: () => void; scrub?: number }) {
   const [size, setSize] = useState({ w: 1440, h: 900 });
   const rootRef = useRef<HTMLDivElement>(null);
   const fxRef = useRef<HTMLCanvasElement>(null);
@@ -268,120 +311,155 @@ export default function MughalFrame({ progress = 0, reveal = LOADER_REVEAL, onRe
     fx.current?.resize(w, h);
   }, [w, h]);
 
-  // The animation: one loop moves both figures and the number until they
-  // touch, then hands over to the golden sequence. The shown value eases
-  // towards the real progress (never faster than FLIGHT_MIN_S for the whole
-  // flight), so jumps in loading never make the figures jerk.
-  useEffect(() => {
+  // --- what every frame sets, live or scrubbed
+  const golden = reveal === "golden";
+  // the figures, their light and the number at a given point of the flight
+  const showFlight = (shown: number) => {
+    const reach = shown / 100;
+    if (ankitRef.current) ankitRef.current.style.transform = transformAt(placed.ankit, reach);
+    if (claudeRef.current) claudeRef.current.style.transform = transformAt(placed.claude, reach);
+    if (golden) {
+      if (ankitGlowRef.current) ankitGlowRef.current.style.transform = transformAt(placed.ankit, reach);
+      if (claudeGlowRef.current) claudeGlowRef.current.style.transform = transformAt(placed.claude, reach);
+      buildUp(reach);
+    }
+    const n = String(Math.floor(shown + 1e-6));
+    if (numRef.current && numRef.current.textContent !== n) {
+      numRef.current.textContent = n;
+      statusRef.current?.setAttribute("aria-label", `Loading ${n}%`);
+    }
+  };
+  // the golden build-up as they approach (k: 0 far apart .. 1 touching)
+  const buildUp = (k: number) => {
+    const orb = orbRef.current;
+    if (!orb) return;
+    orb.style.opacity = "1";
+    orb.style.transform = `scale(${r2(1 + 1.9 * Math.pow(k, 1.6))})`;
+    if (orbHaloRef.current) orbHaloRef.current.style.opacity = String(r2(0.35 + 0.65 * k));
+    if (orbAttractRef.current) orbAttractRef.current.style.opacity = String(r2(Math.min(1, Math.max(0, (k - 0.05) / 0.3))));
+    if (orbStreamsRef.current) orbStreamsRef.current.style.opacity = String(r2(Math.min(0.9, Math.max(0, (k - 0.55) / 0.35))));
+    if (orbArcsRef.current) orbArcsRef.current.style.opacity = String(r2(Math.min(1, Math.max(0, (k - 0.72) / 0.2))));
+    const light = String(r2(Math.pow(k, 1.4) * 0.95));
+    if (ankitGlowRef.current) ankitGlowRef.current.style.opacity = light;
+    if (claudeGlowRef.current) claudeGlowRef.current.style.opacity = light;
+    // the mandala starts to light up (opacity only - no filters)
+    for (const el of [mandalaImgRef.current, mandalaLineRef.current]) {
+      if (!el) continue;
+      el.style.opacity = String(r2(0.3 + 0.35 * k));
+      el.style.filter = "";
+    }
+  };
+  // the orb bursting outwards at the touch (p: 0..1 over ORB_BURST_S)
+  const orbBurst = (p: number) => {
+    const orb = orbRef.current;
+    if (!orb) return;
+    const e = 1 - Math.pow(1 - Math.min(1, Math.max(0, p)), 2);
+    orb.style.transform = `scale(${r2(2.9 + 3.1 * e)})`;
+    orb.style.opacity = String(r2(1 - e));
+  };
+  // the loader is cut along the golden wave's ragged edge (the same
+  // formula the shader draws), so the site shows inside it
+  const cut = (wave: { radius: number; rag: number; time: number } | null) => {
     const root = rootRef.current;
-    let raf = 0, last = 0, start = 0, shown = 0, touched = false;
-    const golden = reveal === "golden";
-    const flightS = golden ? GOLD_FLIGHT_S : FLIGHT_MIN_S;
-    // development only: when the loader started and when they touched, for
-    // the preview's clock
-    const dbg = (process.env.NODE_ENV !== "production" ? window : {}) as { __loaderStart?: number; __loaderTouch?: number };
-    dbg.__loaderTouch = undefined;
-    // the golden build-up as they approach (k: 0 far apart .. 1 touching)
-    const buildUp = (k: number) => {
-      const orb = orbRef.current;
-      if (!orb) return;
-      orb.style.transform = `scale(${r2(1 + 1.9 * Math.pow(k, 1.6))})`;
-      if (orbHaloRef.current) orbHaloRef.current.style.opacity = String(r2(0.35 + 0.65 * k));
-      if (orbAttractRef.current) orbAttractRef.current.style.opacity = String(r2(Math.min(1, Math.max(0, (k - 0.05) / 0.3))));
-      if (orbStreamsRef.current) orbStreamsRef.current.style.opacity = String(r2(Math.min(0.9, Math.max(0, (k - 0.55) / 0.35))));
-      if (orbArcsRef.current) orbArcsRef.current.style.opacity = String(r2(Math.min(1, Math.max(0, (k - 0.72) / 0.2))));
-      const light = String(r2(Math.pow(k, 1.4) * 0.95));
-      if (ankitGlowRef.current) ankitGlowRef.current.style.opacity = light;
-      if (claudeGlowRef.current) claudeGlowRef.current.style.opacity = light;
-      // the mandala starts to light up (opacity only - no filters)
-      for (const el of [mandalaImgRef.current, mandalaLineRef.current]) if (el) el.style.opacity = String(r2(0.3 + 0.35 * k));
+    if (!root) return;
+    if (!wave) {
+      root.style.clipPath = "";
+      return;
+    }
+    const cx = w / 2, cy = h / 2, pts: string[] = [];
+    for (let i = 0; i < 160; i++) {
+      const a = (i / 160) * Math.PI * 2, r = Math.max(0, wave.radius + wave.rag * waveEdge(a, wave.time));
+      pts.push(`${r2(cx + Math.cos(a) * r)} ${r2(cy + Math.sin(a) * r)}`);
+    }
+    root.style.clipPath = `path(evenodd, "M0 0H${w}V${h}H0Z M${pts.join("L")}Z")`;
+  };
+  // the mandala lit up by the explosion (golden)
+  const mandalaGlow = (g: number) => {
+    for (const el of [mandalaImgRef.current, mandalaLineRef.current]) {
+      if (!el) continue;
+      el.style.opacity = String(r2(0.65 + 0.35 * g));
+      el.style.filter = g > 0.01 ? `brightness(${r2(1 + 0.9 * g)}) drop-shadow(0 0 ${r2(14 * g)}px rgba(242, 181, 68, ${r2(0.85 * g)}))` : "";
+    }
+  };
+  // start the ending (paused, and kept at the end, when scrubbing)
+  type Tl = { time: () => number; seek: (t: number, suppress?: boolean) => unknown; duration: () => number };
+  const startEnding = (scrubbing: boolean): Tl | null => {
+    const root = rootRef.current;
+    const hooks = {
+      cut,
+      mandala: mandalaGlow,
+      onReveal: () => cbRef.current.onReveal?.(),
+      onDone: () => cbRef.current.onDone?.(),
     };
+    const els = { box: boxRef.current, litWrap: litWrapRef.current, litInner: litInnerRef.current, litLine: litLineRef.current, pulse: pulseRef.current, wave: ringRef.current };
+    if (reveal === "mandala" && root && els.box && els.litWrap && els.litInner && els.litLine && els.pulse && els.wave) {
+      const fade = [ankitRef.current, claudeRef.current, statusRef.current].filter((e): e is HTMLImageElement | HTMLDivElement => !!e);
+      return playMandalaReveal({ root, box: els.box, litWrap: els.litWrap, litInner: els.litInner, litLine: els.litLine, pulse: els.pulse, wave: els.wave, fade }, gsap, hooks, isReducedMotion(), scrubbing);
+    }
+    if (golden && fx.current) return fx.current.play(hooks, { scrub: scrubbing });
+    if (scrubbing) return null; // three.js not ready yet: try again on the next move
+    // no WebGL: a plain fade instead
+    hooks.onReveal();
+    if (root) gsap.to(root, { opacity: 0, duration: 0.6, ease: "power1.inOut", onComplete: hooks.onDone });
+    else hooks.onDone();
+    return null;
+  };
 
-    // the loader is cut along the golden wave's ragged edge (the same
-    // formula the shader draws), so the site shows inside it
-    const cut = (wave: { radius: number; rag: number; time: number } | null) => {
-      if (!root || !wave) return;
-      const cx = w / 2, cy = h / 2, pts: string[] = [];
-      for (let i = 0; i < 160; i++) {
-        const a = (i / 160) * Math.PI * 2, r = Math.max(0, wave.radius + wave.rag * waveEdge(a, wave.time));
-        pts.push(`${r2(cx + Math.cos(a) * r)} ${r2(cy + Math.sin(a) * r)}`);
-      }
-      root.style.clipPath = `path(evenodd, "M0 0H${w}V${h}H0Z M${pts.join("L")}Z")`;
-    };
-    // the mandala lights up for a moment as the energy passes through it
-    const mandalaGlow = (g: number) => {
-      for (const el of [mandalaImgRef.current, mandalaLineRef.current]) {
-        if (!el) continue;
-        el.style.opacity = String(r2(0.65 + 0.35 * g));
-        el.style.filter = g > 0.01 ? `brightness(${r2(1 + 0.9 * g)}) drop-shadow(0 0 ${r2(14 * g)}px rgba(242, 181, 68, ${r2(0.85 * g)}))` : "";
-      }
-    };
-    const touch = () => {
-      const hooks = {
-        cut,
-        mandala: mandalaGlow,
-        onReveal: () => cbRef.current.onReveal?.(),
-        onDone: () => cbRef.current.onDone?.(),
-      };
-      const els = {
-        box: boxRef.current, litWrap: litWrapRef.current, litInner: litInnerRef.current, litLine: litLineRef.current,
-        pulse: pulseRef.current, wave: ringRef.current,
-      };
-      if (reveal === "mandala" && root && els.box && els.litWrap && els.litInner && els.litLine && els.pulse && els.wave) {
-        const fade = [ankitRef.current, claudeRef.current, statusRef.current].filter((e): e is HTMLImageElement | HTMLDivElement => !!e);
-        playMandalaReveal({ root, box: els.box, litWrap: els.litWrap, litInner: els.litInner, litLine: els.litLine, pulse: els.pulse, wave: els.wave, fade }, gsap, hooks, isReducedMotion());
-        return;
-      }
-      dbg.__loaderTouch = performance.now();
-      if (reveal === "golden") {
-        // the orb bursts outwards into the explosion
-        if (orbRef.current) gsap.to(orbRef.current, { scale: 6, opacity: 0, duration: 0.35, ease: "power2.out" });
-      }
-      if (reveal === "golden" && fx.current) {
-        fx.current.play(hooks);
-        return;
-      }
-      // no WebGL: a plain fade instead
-      hooks.onReveal();
-      if (root) gsap.to(root, { opacity: 0, duration: 0.6, ease: "power1.inOut", onComplete: hooks.onDone });
-      else hooks.onDone();
-    };
-
+  // The live animation: one loop moves both figures and the number until
+  // they touch, then hands over to the ending. The shown value eases
+  // towards the real progress (never faster than the flight time), so jumps
+  // in loading never make the figures jerk.
+  const scrubbing = scrub !== undefined;
+  useEffect(() => {
+    if (scrubbing) return;
+    let raf = 0, last = 0, start = 0;
+    const st: FlightState = { shown: 0, follow: 0 };
     const tick = (now: number) => {
-      if (!start) {
-        start = last = now;
-        dbg.__loaderStart = now;
-      }
+      if (!start) start = last = now;
       const dt = Math.min(0.05, (now - last) / 1000);
       last = now;
-      // the golden ending holds still for ORB_HOLD_S first (the orb alone)
-      const target = golden && now - start < ORB_HOLD_S * 1000 ? 0 : Math.min(100, Math.max(0, targetRef.current ?? 0));
-      if (target > shown) shown = Math.min(target, shown + Math.min((target - shown) * dt * 5 + 2 * dt, (100 / flightS) * dt));
-      if (target - shown < 0.05) shown = target;
-      const reach = shown / 100;
-      if (ankitRef.current) ankitRef.current.style.transform = transformAt(placed.ankit, reach);
-      if (claudeRef.current) claudeRef.current.style.transform = transformAt(placed.claude, reach);
-      if (golden) {
-        if (ankitGlowRef.current) ankitGlowRef.current.style.transform = transformAt(placed.ankit, reach);
-        if (claudeGlowRef.current) claudeGlowRef.current.style.transform = transformAt(placed.claude, reach);
-        buildUp(reach);
-      }
-      const n = String(Math.floor(shown + 1e-6));
-      if (numRef.current && numRef.current.textContent !== n) {
-        numRef.current.textContent = n;
-        statusRef.current?.setAttribute("aria-label", `Loading ${n}%`);
-      }
-      if (shown >= 100) {
-        touched = true;
-        touch();
-        return; // the ending takes it from here
+      flightStep(st, (now - start) / 1000, dt, Math.min(100, Math.max(0, targetRef.current ?? 0)), reveal);
+      showFlight(st.shown);
+      if (st.shown >= 100) {
+        // the touch: the orb bursts, the ending takes it from here
+        if (golden && orbRef.current) {
+          const orb = orbRef.current, t0 = performance.now();
+          const burst = (n: number) => {
+            orbBurst((n - t0) / 1000 / ORB_BURST_S);
+            if (n - t0 < ORB_BURST_S * 1000) requestAnimationFrame(burst);
+          };
+          if (orb) requestAnimationFrame(burst);
+        }
+        startEnding(false);
+        return;
       }
       raf = requestAnimationFrame(tick);
     };
-    if (!touched) raf = requestAnimationFrame(tick);
+    raf = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(raf);
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- transformAt only reads r2
-  }, [placed, reveal]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- the helpers only read refs and layout
+  }, [placed, reveal, scrubbing]);
+
+  // The scrubbed preview: show the moment `scrub` seconds from the start
+  const endingRef = useRef<Tl | null>(null);
+  useEffect(() => {
+    if (scrub === undefined) return;
+    const { shown, touchAt } = flightAt(scrub, reveal);
+    if (scrub < touchAt) {
+      showFlight(shown);
+      endingRef.current?.seek(0, false); // the ending not started yet
+      if (golden && endingRef.current) {
+        cut(null);
+        buildUp(shown / 100);
+      }
+    } else {
+      showFlight(100);
+      if (!endingRef.current) endingRef.current = startEnding(true);
+      endingRef.current?.seek(scrub - touchAt, false);
+      if (golden) orbBurst((scrub - touchAt) / ORB_BURST_S);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- the helpers only read refs and layout
+  }, [scrub, placed, reveal]);
 
   const corner = (left: number, top: number, flip: string) => (
     // eslint-disable-next-line @next/next/no-img-element -- decorative SVG

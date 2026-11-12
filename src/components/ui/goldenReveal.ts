@@ -56,6 +56,7 @@ const SPARK_END = 0.06;
 const REVEAL_START = 1.3; // the touch is at 2.2 s, so this is 3.5 s from the start
 const REVEAL_END = 2.5;
 const END = 3.0;
+export const GOLDEN_DURATION = END; // s, the touch to the end
 
 // palette: deep antique gold, amber, warm orange (sRGB; three converts)
 const GOLD = "#D9A23A";
@@ -79,7 +80,9 @@ export type Hooks = {
 };
 
 export type GoldenReveal = {
-  play: (hooks: Hooks) => void;
+  // `scrub`: the timeline starts paused and is never torn down at the end,
+  // so it can be moved to any moment (the loader preview); returns it
+  play: (hooks: Hooks, opts?: { scrub?: boolean }) => ReturnType<typeof import("gsap").gsap.timeline>;
   resize: (w: number, h: number) => void;
   dispose: () => void;
 };
@@ -497,7 +500,7 @@ export function createGoldenReveal(kit: Kit, canvas: HTMLCanvasElement, width: n
     renderer.forceContextLoss();
   };
 
-  const play = (hooks: Hooks) => {
+  const play = (hooks: Hooks, opts: { scrub?: boolean } = {}) => {
     const s = S();
     // everything the timeline animates
     const st = { spark: 0, hot: 0, light: 0, rings: 0, trails: 0, shock: 0, shockA: 0, wave: 0, waveA: 0, mandala: 0, fade: 1 };
@@ -553,14 +556,17 @@ export function createGoldenReveal(kit: Kit, canvas: HTMLCanvasElement, width: n
           hooks.onReveal();
         }
         hooks.cut({ radius: waveR, rag: WAVE_RAG * s, time: t });
-      }
-      hooks.mandala(st.mandala);
+      } else hooks.cut(null);
+      // at 0 (before the touch, when scrubbing) the loader's own build-up owns the mandala
+      if (t > 0) hooks.mandala(st.mandala);
       composer.render();
       raf = requestAnimationFrame(frame);
     };
 
     tl = gsap.timeline({
+      paused: !!opts.scrub,
       onComplete: () => {
+        if (opts.scrub) return; // kept, so it can be moved back
         hooks.cut(null);
         dispose(); // stops the loop and frees the GPU
         hooks.onDone();
@@ -590,6 +596,7 @@ export function createGoldenReveal(kit: Kit, canvas: HTMLCanvasElement, width: n
     // development only: lets a test jump to any moment (window.__goldenTl.pause(seconds))
     if (process.env.NODE_ENV !== "production") (window as unknown as { __goldenTl?: unknown }).__goldenTl = tl;
     raf = requestAnimationFrame(frame);
+    return tl;
   };
 
   return { play, resize, dispose };

@@ -17,6 +17,8 @@
 
 type Gsap = typeof import("gsap").gsap;
 
+export const MANDALA_DURATION = 2.25; // s, the touch to the end (the last motes fade by then)
+
 export type MandalaRevealEls = {
   root: HTMLElement; // the whole loader
   box: HTMLElement; // the mandala's container (rotates and swells)
@@ -28,13 +30,15 @@ export type MandalaRevealEls = {
   fade: HTMLElement[]; // the figures and anything else that fades out at the end
 };
 
-export function playMandalaReveal(els: MandalaRevealEls, gsap: Gsap, hooks: { onReveal: () => void; onDone: () => void }, reduced = false) {
+// `scrub`: start paused and keep everything at the end, so the timeline can
+// be moved to any moment (the loader preview)
+export function playMandalaReveal(els: MandalaRevealEls, gsap: Gsap, hooks: { onReveal: () => void; onDone: () => void }, reduced = false, scrub = false) {
   const { root } = els;
   const w = root.clientWidth, h = root.clientHeight;
   const far = Math.hypot(w, h) / 2; // centre to the corners
   const S = far / 900; // tuned for a laptop screen
 
-  if (reduced) {
+  if (reduced && !scrub) {
     // reduced motion: no movement, just a quick fade to the site
     hooks.onReveal();
     return gsap.to(root, { opacity: 0, duration: 0.4, ease: "power1.out", onComplete: hooks.onDone });
@@ -84,7 +88,9 @@ export function playMandalaReveal(els: MandalaRevealEls, gsap: Gsap, hooks: { on
   setLit();
 
   const tl = gsap.timeline({
+    paused: scrub,
     onComplete: () => {
+      if (scrub) return;
       motes.forEach((m) => m.remove());
       hooks.onDone();
     },

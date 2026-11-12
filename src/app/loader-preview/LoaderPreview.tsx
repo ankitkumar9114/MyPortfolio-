@@ -1,121 +1,112 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import MughalFrame from "@/components/ui/MughalFrame";
+import MughalFrame, { flightAt } from "@/components/ui/MughalFrame";
+import { GOLDEN_DURATION } from "@/components/ui/goldenReveal";
+import { MANDALA_DURATION } from "@/components/ui/mandalaReveal";
 import { LOADER_REVEAL, LOADER_REVEAL_NAMES, type LoaderReveal } from "@/lib/loaderReveal";
 
-// The endings' GSAP timelines, which they expose in development
-// (window.__mandalaTl / __goldenTl): the clock below reads them, and the
-// slider and pause button drive them.
-type Tl = { time: (t?: number) => number; duration: () => number; pause: (t?: number) => unknown; seek: (t: number, suppressEvents?: boolean) => unknown; play: () => unknown; paused: () => boolean };
-type Win = { __mandalaTl?: Tl; __goldenTl?: Tl; __loaderStart?: number; __loaderTouch?: number };
-const KEY: Record<LoaderReveal, "__mandalaTl" | "__goldenTl"> = { mandala: "__mandalaTl", golden: "__goldenTl" };
+const ENDING: Record<LoaderReveal, number> = { mandala: MANDALA_DURATION, golden: GOLDEN_DURATION };
 
 // The loader over the real site (an iframe of the home page with ?noloader,
-// so the site's own loader doesn't play inside it). Pick an ending to play
-// it; the site's active one is set in lib/loaderReveal.ts. The clock shows
-// the seconds since the loader started (the slider moves within the part
-// after the fingertips touch).
+// so the site's own loader doesn't play inside it), as one timeline from the
+// start to the end of the reveal: play it, pause it, or drag to any moment,
+// forwards or backwards. Pick an ending to see it; the site's active one is
+// set in lib/loaderReveal.ts.
 export default function LoaderPreview() {
   const [reveal, setReveal] = useState<LoaderReveal>(LOADER_REVEAL);
   const [run, setRun] = useState(0);
+  const [time, setTimeState] = useState(0); // s from the start
+  const timeRef = useRef(0);
+  const setTime = (t: number) => {
+    timeRef.current = t;
+    setTimeState(t);
+  };
   const [playing, setPlaying] = useState(true);
-  const [time, setTime] = useState<number | null>(null); // s since the touch; null while they're flying
-  const [total, setTotal] = useState(0); // s since the loader started
-  const [touchAt, setTouchAt] = useState<number | null>(null); // s from the start to the touch
-  const [length, setLength] = useState(0);
-  const [paused, setPaused] = useState(false);
-  const tlRef = useRef<Tl | null>(null);
+  const touchAt = flightAt(0, reveal).touchAt;
+  const total = touchAt + ENDING[reveal];
 
-  const play = (r: LoaderReveal) => {
+  // playing: move the clock on in real time
+  useEffect(() => {
+    if (!playing) return;
+    let raf = 0, last = 0;
+    const step = (now: number) => {
+      const dt = last ? (now - last) / 1000 : 0;
+      last = now;
+      const next = Math.min(total, timeRef.current + dt);
+      timeRef.current = next;
+      setTimeState(next);
+      if (next >= total) setPlaying(false);
+      else raf = requestAnimationFrame(step);
+    };
+    raf = requestAnimationFrame(step);
+    return () => cancelAnimationFrame(raf);
+  }, [playing, total]);
+
+  const choose = (r: LoaderReveal) => {
     setReveal(r);
     setRun((n) => n + 1);
+    setTime(0);
     setPlaying(true);
-    setTime(null);
-    setTouchAt(null);
-    setPaused(false);
+  };
+  const replay = () => {
+    setTime(0);
+    setPlaying(true);
   };
 
-  // read the running ending's clock every frame
-  useEffect(() => {
-    // a new run: forget the last one's timelines (the new one is made at the touch)
-    const w = window as unknown as Win;
-    delete w.__mandalaTl;
-    delete w.__goldenTl;
-    tlRef.current = null;
-    let raf = 0;
-    const read = () => {
-      const win = window as unknown as Win;
-      const tl = win[KEY[reveal]] ?? null;
-      tlRef.current = tl;
-      const start = win.__loaderStart, touch = win.__loaderTouch;
-      if (tl) {
-        setTime(tl.time());
-        setLength(tl.duration());
-        setPaused(tl.paused());
-        if (start !== undefined && touch !== undefined) setTouchAt((touch - start) / 1000);
-      } else if (start !== undefined) {
-        setTotal((performance.now() - start) / 1000);
-      }
-      raf = requestAnimationFrame(read);
-    };
-    raf = requestAnimationFrame(read);
-    return () => cancelAnimationFrame(raf);
-  }, [reveal, run]);
-
-  const togglePause = () => {
-    const tl = tlRef.current;
-    if (!tl) return;
-    if (tl.paused()) tl.play();
-    else tl.pause();
-  };
-
+  const after = time - touchAt;
   return (
     <>
       <iframe src="/?noloader" title="Site" className="fixed inset-0 h-full w-full border-0" />
-      {playing && <MughalFrame key={`${reveal}-${run}`} reveal={reveal} progress={100} onDone={() => setPlaying(false)} />}
-      <div className="fixed left-1/2 top-3 z-[1100] flex -translate-x-1/2 flex-col items-center gap-2 rounded-2xl bg-black/75 p-2 font-[family-name:var(--font-manrope)] text-[13px] text-white shadow-lg backdrop-blur">
-        <div className="flex gap-2">
+      <MughalFrame key={`${reveal}-${run}`} reveal={reveal} progress={100} scrub={time} />
+      <div className="fixed left-1/2 top-3 z-[1100] flex w-[min(640px,calc(100vw-24px))] -translate-x-1/2 flex-col gap-2 rounded-2xl bg-black/75 p-2 font-[family-name:var(--font-manrope)] text-[13px] text-white shadow-lg backdrop-blur">
+        <div className="flex justify-center gap-2">
           {(Object.keys(LOADER_REVEAL_NAMES) as LoaderReveal[]).map((r) => (
             <button
               key={r}
               type="button"
-              onClick={() => play(r)}
+              onClick={() => choose(r)}
               className={`rounded-full px-4 py-1.5 font-semibold transition-colors ${reveal === r ? "bg-[#D9A23A] text-black" : "hover:bg-white/15"}`}
             >
               {LOADER_REVEAL_NAMES[r]}
               {r === LOADER_REVEAL ? " (on site)" : ""}
             </button>
           ))}
-          <button type="button" onClick={() => play(reveal)} className="rounded-full px-4 py-1.5 font-semibold hover:bg-white/15">
+          <button type="button" onClick={replay} className="rounded-full px-4 py-1.5 font-semibold hover:bg-white/15">
             ↻ Replay
           </button>
         </div>
-        {/* the clock: seconds since the fingertips touched */}
-        <div className="flex w-full items-center gap-3 px-2 pb-1">
-          <button type="button" onClick={togglePause} disabled={time === null} className="w-16 rounded-full bg-white/15 px-2 py-1 font-semibold disabled:opacity-40">
-            {paused ? "▶ Play" : "❚❚ Pause"}
+        <div className="flex items-center gap-3 px-2 pb-1">
+          <button
+            type="button"
+            onClick={() => (time >= total ? replay() : setPlaying((p) => !p))}
+            className="w-[76px] shrink-0 rounded-full bg-white/15 px-2 py-1 font-semibold"
+          >
+            {playing ? "❚❚ Pause" : "▶ Play"}
           </button>
-          <span className="w-[220px] font-mono text-[15px] tabular-nums">
-            {time === null ? `${total.toFixed(2)} s · flying in` : `${((touchAt ?? 0) + time).toFixed(2)} s · touch +${time.toFixed(2)}`}
+          {/* seconds from the start; and before / after the touch */}
+          <span className="w-[200px] shrink-0 font-mono text-[14px] tabular-nums">
+            {time.toFixed(2)} s · {after < 0 ? `touch in ${(-after).toFixed(2)}` : `touch +${after.toFixed(2)}`}
           </span>
-          <input
-            type="range"
-            min={0}
-            max={length || 1}
-            step={0.01}
-            value={time ?? 0}
-            disabled={time === null}
-            onChange={(e) => {
-              // pause there, running the update callbacks so every part redraws
-              const tl = tlRef.current;
-              if (!tl) return;
-              tl.pause();
-              tl.seek(Number(e.target.value), false);
-            }}
-            className="flex-1 accent-[#D9A23A]"
-            aria-label="Time since the touch"
-          />
+          <div className="relative flex-1">
+            <input
+              type="range"
+              min={0}
+              max={total}
+              step={0.01}
+              value={time}
+              onChange={(e) => {
+                setPlaying(false);
+                setTime(Number(e.target.value));
+              }}
+              className="w-full accent-[#D9A23A]"
+              aria-label="Time from the start"
+            />
+            {/* where the touch is on the slider */}
+            <span aria-hidden="true" className="pointer-events-none absolute -bottom-2 text-[10px] text-[#D9A23A]" style={{ left: `${(touchAt / total) * 100}%`, transform: "translateX(-50%)" }}>
+              ▲ touch {touchAt.toFixed(1)}s
+            </span>
+          </div>
         </div>
       </div>
     </>
