@@ -16,6 +16,8 @@ const P = "/graphics/loader-frame/";
 const CORNER = { w: 39, h: 40 }; // top-left L, arms 18 thick
 const TILE = { w: 49, h: 18 }; // band tile
 const BAND = 20; // border thickness on screen (px)
+const OUTER = "#710004"; // band gradient, outer edge
+const INNER = "#A0251E"; // band gradient, inner edge
 
 export default function MughalFrame() {
   const [size, setSize] = useState({ w: 1440, h: 900 });
@@ -66,8 +68,31 @@ export default function MughalFrame() {
   return (
     <div className="fixed inset-0 overflow-hidden" style={{ background: "#002F2A url('/images/loader-bg-teal.webp') center / cover" }}>
       <svg width={w} height={h} viewBox={`0 0 ${w} ${h}`} className="absolute inset-0 block" aria-hidden="true">
-        {/* the band colour under the tiles, so a sub-pixel gap between tiles shows red, not a line */}
-        <path d={`M0 0H${w}V${t}H0Z M0 ${h - t}H${w}V${h}H0Z M0 0H${t}V${h}H0Z M${w - t} 0H${w}V${h}H${w - t}Z`} fill="#9B211C" />
+        {/* the band: a gradient from the outer edge (#710004) to the inner
+            edge (#A0251E) on each side, mitred at the corners; the SVG tiles
+            and corners only add the gold ornaments on top */}
+        <defs>
+          <linearGradient id="band-top" x1="0" y1="0" x2="0" y2={t} gradientUnits="userSpaceOnUse">
+            <stop offset="0" stopColor={OUTER} />
+            <stop offset="1" stopColor={INNER} />
+          </linearGradient>
+          <linearGradient id="band-bottom" x1="0" y1={h} x2="0" y2={h - t} gradientUnits="userSpaceOnUse">
+            <stop offset="0" stopColor={OUTER} />
+            <stop offset="1" stopColor={INNER} />
+          </linearGradient>
+          <linearGradient id="band-left" x1="0" y1="0" x2={t} y2="0" gradientUnits="userSpaceOnUse">
+            <stop offset="0" stopColor={OUTER} />
+            <stop offset="1" stopColor={INNER} />
+          </linearGradient>
+          <linearGradient id="band-right" x1={w} y1="0" x2={w - t} y2="0" gradientUnits="userSpaceOnUse">
+            <stop offset="0" stopColor={OUTER} />
+            <stop offset="1" stopColor={INNER} />
+          </linearGradient>
+        </defs>
+        <path d={`M0 0H${w}L${w - t} ${t}H${t}Z`} fill="url(#band-top)" />
+        <path d={`M0 ${h}H${w}L${w - t} ${h - t}H${t}Z`} fill="url(#band-bottom)" />
+        <path d={`M0 0V${h}L${t} ${h - t}V${t}Z`} fill="url(#band-left)" />
+        <path d={`M${w} 0V${h}L${w - t} ${h - t}V${t}Z`} fill="url(#band-right)" />
         {tiles}
       </svg>
       {corner(0, 0, "none")}
