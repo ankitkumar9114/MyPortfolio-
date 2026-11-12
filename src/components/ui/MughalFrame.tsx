@@ -69,9 +69,10 @@ export default function MughalFrame() {
   // --- flying Ankit and flying Claude, reaching for each other (as in the
   // reference painting): Ankit lower left, Claude upper right, fingertips
   // almost touching just above the centre. Same scale for both, sized to
-  // fit the space inside the frame.
+  // fit the space inside the frame, then 30% bigger (anything reaching the
+  // edges tucks under the frame, which is drawn on top).
   const innerW = w - 2 * inset, innerH = h - 2 * inset;
-  const fs = Math.min(0.42, (0.9 * innerW) / (ANKIT.w + CLAUDE.w), (0.62 * innerH) / (CLAUDE.tip[1] + ANKIT.h - ANKIT.tip[1] + 40));
+  const fs = 1.3 * Math.min(0.42, (0.9 * innerW) / (ANKIT.w + CLAUDE.w), (0.62 * innerH) / (CLAUDE.tip[1] + ANKIT.h - ANKIT.tip[1] + 40));
   const gap = 18 * fs; // between the fingertips
   const meetX = w / 2, meetY = h * 0.46;
   const ankit = { left: meetX - gap - ANKIT.tip[0] * fs, top: meetY + 20 * fs - ANKIT.tip[1] * fs, width: ANKIT.w * fs, height: ANKIT.h * fs };
@@ -91,6 +92,11 @@ export default function MughalFrame() {
   );
   return (
     <div className="fixed inset-0 overflow-hidden" style={{ background: "#002F2A url('/images/loader-bg-teal.webp') center / cover" }}>
+      {/* flying Ankit and flying Claude */}
+      {/* eslint-disable-next-line @next/next/no-img-element -- decorative figure */}
+      <img src="/images/flying-ankit.webp" alt="" aria-hidden="true" draggable={false} className="pointer-events-none absolute select-none" style={ankit} />
+      {/* eslint-disable-next-line @next/next/no-img-element -- decorative figure */}
+      <img src="/images/flying-claude.webp" alt="" aria-hidden="true" draggable={false} className="pointer-events-none absolute select-none" style={claude} />
       <svg width={w} height={h} viewBox={`0 0 ${w} ${h}`} className="absolute inset-0 block" aria-hidden="true">
         {/* the band: a gradient from the outer edge (#710004) to the inner
             edge (#A0251E) on each side, mitred at the corners; the SVG tiles
@@ -124,11 +130,6 @@ export default function MughalFrame() {
         {/* black line just inside the gold one, touching it all the way round */}
         <rect x={t + GOLD_LINE + BLACK_LINE / 2} y={t + GOLD_LINE + BLACK_LINE / 2} width={w - 2 * (t + GOLD_LINE) - BLACK_LINE} height={h - 2 * (t + GOLD_LINE) - BLACK_LINE} fill="none" stroke="#000000" strokeWidth={BLACK_LINE} />
       </svg>
-      {/* flying Ankit and flying Claude */}
-      {/* eslint-disable-next-line @next/next/no-img-element -- decorative figure */}
-      <img src="/images/flying-ankit.webp" alt="" aria-hidden="true" draggable={false} className="pointer-events-none absolute select-none" style={ankit} />
-      {/* eslint-disable-next-line @next/next/no-img-element -- decorative figure */}
-      <img src="/images/flying-claude.webp" alt="" aria-hidden="true" draggable={false} className="pointer-events-none absolute select-none" style={claude} />
       {/* corner plant panels */}
       {/* eslint-disable-next-line @next/next/no-img-element -- decorative */}
       <img src="/images/corner-plant.webp" alt="" aria-hidden="true" draggable={false} className="pointer-events-none absolute select-none" style={{ left: inset, top: inset, width: pw, height: ph }} />
