@@ -91,8 +91,8 @@ export default function MughalFrame() {
   // the flying figures (drawn over the frame, as in Figma): image size,
   // centre, Figma tilt, shadow, and where the shoulder and the pointing
   // fingertip are in the image (as fractions of its width / height)
-  const ankit = { w: 701.03, h: 520.84, cx: L(-133.57 + 771.71 / 2), cy: B(388.97 + 620.82 / 2), rotate: 8.69, shadow: "0 4px 12px rgba(0,0,0,0.5)", shoulder: [960 / 1455, 360 / 1081], tip: [1438 / 1455, 160 / 1081] };
-  const claude = { w: 683.63, h: 437.3, cx: R(738.72 + 792.73 / 2), cy: T(74.67 + 646.87 / 2), rotate: -20.25, shadow: "0 4px 20px rgba(0,0,0,0.8)", shoulder: [480 / 1568, 375 / 1003], tip: [52 / 1568, 374 / 1003] };
+  const ankit = { w: 701.03, h: 520.84, cx: L(-52 + 707.24 / 2), cy: B(495.61 + 529.22 / 2), rotate: -0.69, shadow: "0 4px 12px rgba(0,0,0,0.5)", shoulder: [960 / 1455, 360 / 1081], tip: [1438 / 1455, 160 / 1081] };
+  const claude = { w: 683.63, h: 437.3, cx: R(718.27 + 810.44 / 2), cy: T(-40 + 718.11 / 2), rotate: -29.63, shadow: "0 4px 20px rgba(0,0,0,0.8)", shoulder: [480 / 1568, 375 / 1003], tip: [52 / 1568, 374 / 1003] };
   const r2 = (n: number) => Math.round(n * 100) / 100; // same numbers on server and client
   const pieceImg = (p: Piece, i: number) => (
     // eslint-disable-next-line @next/next/no-img-element -- decorative
