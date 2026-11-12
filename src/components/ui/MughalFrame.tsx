@@ -3,8 +3,10 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { PLANT } from "./cornerPlantEdge";
 import { MANDALA_EDGE, MANDALA_TIPS } from "./mandalaEdge";
-import { gsap } from "@/lib/gsap";
+import { gsap, isReducedMotion } from "@/lib/gsap";
+import { LOADER_REVEAL, type LoaderReveal } from "@/lib/loaderReveal";
 import { createGoldenReveal, loadThree, waveEdge, type GoldenReveal } from "./goldenReveal";
+import { playMandalaReveal } from "./mandalaReveal";
 
 // Frame for the new loader (border only, for now): the teal textured
 // background (loader-bg-teal.webp) inside a border made of two SVGs from
@@ -36,17 +38,25 @@ const FLIGHT_MIN_S = 2.6; // the figures never fly in faster than this (0 -> 100
 // `progress` (0-100, real loading progress from MughalLoader) drives the
 // percentage and the figures' flight.
 //
-// At 100% the fingertips touch and the golden energy sequence plays
-// (goldenReveal.ts, three.js): a spark, a 3D explosion of golden energy,
-// then a golden wave that unlocks the site - the loader cut away along its
-// edge, its artwork dissolving into golden particles. `onReveal` fires as
-// the wave starts, `onDone` once the loader is gone.
-export default function MughalFrame({ progress = 0, onReveal, onDone }: { progress?: number; onReveal?: () => void; onDone?: () => void }) {
+// At 100% the fingertips touch and one of two endings plays (`reveal`, by
+// default LOADER_REVEAL in lib/loaderReveal.ts):
+//   "mandala" - the mandala awakens and a golden ring opens the site
+//               (mandalaReveal.ts: CSS/SVG + GSAP)
+//   "golden"  - a three.js golden energy explosion and wave (goldenReveal.ts)
+// `onReveal` fires as the site starts to show, `onDone` once the loader is gone.
+export default function MughalFrame({ progress = 0, reveal = LOADER_REVEAL, onReveal, onDone }: { progress?: number; reveal?: LoaderReveal; onReveal?: () => void; onDone?: () => void }) {
   const [size, setSize] = useState({ w: 1440, h: 900 });
   const rootRef = useRef<HTMLDivElement>(null);
   const fxRef = useRef<HTMLCanvasElement>(null);
   const mandalaImgRef = useRef<HTMLImageElement>(null);
   const mandalaLineRef = useRef<SVGSVGElement>(null);
+  // the mandala ending's pieces
+  const boxRef = useRef<HTMLDivElement>(null);
+  const litWrapRef = useRef<HTMLDivElement>(null);
+  const litInnerRef = useRef<HTMLDivElement>(null);
+  const litLineRef = useRef<SVGSVGElement>(null);
+  const pulseRef = useRef<HTMLDivElement>(null);
+  const ringRef = useRef<HTMLDivElement>(null);
   const cbRef = useRef({ onReveal, onDone });
   useEffect(() => {
     cbRef.current = { onReveal, onDone };
@@ -202,6 +212,7 @@ export default function MughalFrame({ progress = 0, onReveal, onDone }: { progre
   // touch)
   const fx = useRef<GoldenReveal | null>(null);
   useEffect(() => {
+    if (reveal !== "golden") return; // the mandala ending needs no three.js
     let alive = true;
     loadThree()
       .then((kit) => {
@@ -215,7 +226,7 @@ export default function MughalFrame({ progress = 0, onReveal, onDone }: { progre
       fx.current?.dispose();
       fx.current = null;
     };
-  }, []);
+  }, [reveal]);
   useEffect(() => {
     fx.current?.resize(w, h);
   }, [w, h]);
@@ -254,7 +265,16 @@ export default function MughalFrame({ progress = 0, onReveal, onDone }: { progre
         onReveal: () => cbRef.current.onReveal?.(),
         onDone: () => cbRef.current.onDone?.(),
       };
-      if (fx.current) {
+      const els = {
+        box: boxRef.current, litWrap: litWrapRef.current, litInner: litInnerRef.current, litLine: litLineRef.current,
+        pulse: pulseRef.current, wave: ringRef.current,
+      };
+      if (reveal === "mandala" && root && els.box && els.litWrap && els.litInner && els.litLine && els.pulse && els.wave) {
+        const fade = [ankitRef.current, claudeRef.current, statusRef.current].filter((e): e is HTMLImageElement | HTMLDivElement => !!e);
+        playMandalaReveal({ root, box: els.box, litWrap: els.litWrap, litInner: els.litInner, litLine: els.litLine, pulse: els.pulse, wave: els.wave, fade }, gsap, hooks, isReducedMotion());
+        return;
+      }
+      if (reveal === "golden" && fx.current) {
         fx.current.play(hooks);
         return;
       }
@@ -281,14 +301,14 @@ export default function MughalFrame({ progress = 0, onReveal, onDone }: { progre
       if (shown >= 100) {
         touched = true;
         touch();
-        return; // the golden sequence takes it from here
+        return; // the ending takes it from here
       }
       raf = requestAnimationFrame(tick);
     };
     if (!touched) raf = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(raf);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- transformAt only reads r2
-  }, [placed]);
+  }, [placed, reveal]);
 
   const corner = (left: number, top: number, flip: string) => (
     // eslint-disable-next-line @next/next/no-img-element -- decorative SVG
@@ -312,16 +332,42 @@ export default function MughalFrame({ progress = 0, onReveal, onDone }: { progre
       <img src="/images/corner-plant.webp" alt="" aria-hidden="true" draggable={false} className="pointer-events-none absolute select-none" style={{ left: w - inset - pw, top: inset, width: pw, height: ph, transform: "scaleX(-1)" }} />
       {/* red flower plants and clouds */}
       {pieces.map(pieceImg)}
-      {/* the gold mandala (raw-images/mandala-lines.svg, lines in the reference painting's muted ochre) in the centre, behind the figures' hands */}
-      {/* eslint-disable-next-line @next/next/no-img-element -- decorative SVG */}
-      <img ref={mandalaImgRef} src={`${P}mandala.svg`} alt="" aria-hidden="true" draggable={false} className="mandala-spin pointer-events-none absolute select-none" style={{ ...mandala, opacity: 0.3 }} />
-      {/* a dotted line hugging the mandala's own edge, a little outside it, same ochre and opacity */}
-      <svg ref={mandalaLineRef} aria-hidden="true" className="mandala-spin pointer-events-none absolute overflow-visible" viewBox="0 0 1 1" preserveAspectRatio="none" style={{ ...mandala, opacity: 0.3 }}>
-        <path d={MANDALA_EDGE} fill="none" stroke="#B9823A" strokeWidth={0.009} strokeLinecap="round" strokeDasharray="0.0001 0.021" />
-        {MANDALA_TIPS.map(([x, y]) => (
-          <circle key={`${x},${y}`} cx={x} cy={y} r={0.008} fill="#B9823A" />
-        ))}
-      </svg>
+      {/* the mandala (raw-images/mandala-lines.svg, in the reference painting's
+          muted ochre) in the centre, behind the figures' hands, with its
+          dotted outline; both turn slowly. The box around them turns and
+          swells in the mandala ending, which also lights a bright-gold copy
+          and draws the outline in gold. */}
+      <div ref={boxRef} className="pointer-events-none absolute" style={mandala}>
+        {/* eslint-disable-next-line @next/next/no-img-element -- decorative SVG */}
+        <img ref={mandalaImgRef} src={`${P}mandala.svg`} alt="" aria-hidden="true" draggable={false} className="mandala-spin absolute inset-0 h-full w-full select-none" style={{ opacity: 0.3 }} />
+        <svg ref={mandalaLineRef} aria-hidden="true" className="mandala-spin absolute inset-0 h-full w-full overflow-visible" viewBox="0 0 1 1" preserveAspectRatio="none" style={{ opacity: 0.3 }}>
+          <path d={MANDALA_EDGE} fill="none" stroke="#B9823A" strokeWidth={0.009} strokeLinecap="round" strokeDasharray="0.0001 0.021" />
+          {MANDALA_TIPS.map(([x, y]) => (
+            <circle key={`${x},${y}`} cx={x} cy={y} r={0.008} fill="#B9823A" />
+          ))}
+        </svg>
+        {reveal === "mandala" && (
+          <>
+            <div ref={litWrapRef} aria-hidden="true" className="absolute inset-0" style={{ opacity: 0, transform: "scale(0.04)", maskImage: "radial-gradient(closest-side, #000 78%, transparent 100%)", WebkitMaskImage: "radial-gradient(closest-side, #000 78%, transparent 100%)" }}>
+              <div ref={litInnerRef} className="absolute inset-0">
+                {/* eslint-disable-next-line @next/next/no-img-element -- decorative SVG */}
+                <img src={`${P}mandala-lit.svg`} alt="" draggable={false} className="mandala-spin absolute inset-0 h-full w-full select-none" />
+              </div>
+            </div>
+            <svg ref={litLineRef} aria-hidden="true" className="mandala-spin absolute inset-0 h-full w-full overflow-visible" viewBox="0 0 1 1" preserveAspectRatio="none" style={{ opacity: 0 }}>
+              <path data-draw="" d={MANDALA_EDGE} pathLength={1} fill="none" stroke="#F4C766" strokeWidth={0.005} strokeDasharray="1" strokeDashoffset="1" />
+              <path data-shimmer="" d={MANDALA_EDGE} pathLength={1} fill="none" stroke="#FFE3A0" strokeWidth={0.011} strokeLinecap="round" strokeDasharray="0.05 0.95" strokeDashoffset="0" opacity={0} />
+            </svg>
+          </>
+        )}
+      </div>
+      {reveal === "mandala" && (
+        // the warm glow at the centre, and the golden ring that travels out
+        <>
+          <div ref={pulseRef} aria-hidden="true" className="pointer-events-none absolute rounded-full" style={{ left: r2(w / 2 - mh * 0.35), top: r2(h / 2 - mh * 0.35), width: r2(mh * 0.7), height: r2(mh * 0.7), opacity: 0, background: "radial-gradient(circle, rgba(255, 214, 130, 0.55) 0%, rgba(242, 181, 68, 0.28) 30%, rgba(217, 162, 58, 0.08) 58%, rgba(217, 162, 58, 0) 72%)" }} />
+          <div ref={ringRef} aria-hidden="true" className="pointer-events-none absolute rounded-full" style={{ left: r2(w / 2 - Math.hypot(w, h) / 2), top: r2(h / 2 - Math.hypot(w, h) / 2), width: r2(Math.hypot(w, h)), height: r2(Math.hypot(w, h)), opacity: 0, background: "radial-gradient(circle, rgba(242, 181, 68, 0) 62%, rgba(242, 181, 68, 0.16) 80%, rgba(255, 214, 130, 0.42) 86%, rgba(242, 181, 68, 0.14) 90%, rgba(242, 181, 68, 0) 96%)" }} />
+        </>
+      )}
       <svg width={w} height={h} viewBox={`0 0 ${w} ${h}`} className="absolute inset-0 block" aria-hidden="true">
         {/* the band: a gradient from the outer edge (#710004) to the inner
             edge (#A0251E) on each side, mitred at the corners; the SVG tiles
@@ -386,7 +432,7 @@ export default function MughalFrame({ progress = 0, onReveal, onDone }: { progre
       </div>
       {/* the golden energy sequence (goldenReveal.ts): a transparent three.js
           canvas over the loader and the site */}
-      <canvas ref={fxRef} aria-hidden="true" className="pointer-events-none fixed inset-0 z-[1001] h-full w-full" />
+      {reveal === "golden" && <canvas ref={fxRef} aria-hidden="true" className="pointer-events-none fixed inset-0 z-[1001] h-full w-full" />}
     </>
   );
 }

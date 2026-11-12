@@ -26,7 +26,10 @@ export default function MughalLoader() {
   const [progress, setProgress] = useState(0);
 
   useEffect(() => {
-    if (isReducedMotion()) {
+    // Skipped under reduced motion - and, in development only, with ?noloader
+    // (the site shown behind /loader-preview, which plays the loader itself)
+    const noLoader = process.env.NODE_ENV !== "production" && new URLSearchParams(window.location.search).has("noloader");
+    if (isReducedMotion() || noLoader) {
       // a frame later, so it isn't a state change straight inside the effect
       const id = requestAnimationFrame(() => {
         setDone(true);
