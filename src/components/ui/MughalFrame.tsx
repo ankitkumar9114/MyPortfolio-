@@ -88,9 +88,11 @@ export default function MughalFrame() {
     { src: "loader-cloud-bottom.webp", x: L(15), y: B(765.77), w: 742.5, h: 258.5 }, // cloud 1 again, under Ankit
     { src: "loader-cloud-top.webp", x: C(719), y: T(-56), w: 537, h: 226.5 }, // cloud 2, top
   ];
-  // the flying figures (drawn over the frame, as in Figma): image size, centre, tilt, shadow
-  const ankit = { w: 701.03, h: 520.84, cx: L(-133.57 + 771.71 / 2), cy: B(388.97 + 620.82 / 2), rotate: 8.69, shadow: "0 4px 12px rgba(0,0,0,0.5)" };
-  const claude = { w: 683.63, h: 437.3, cx: R(738.72 + 792.73 / 2), cy: T(74.67 + 646.87 / 2), rotate: -20.25, shadow: "0 4px 20px rgba(0,0,0,0.8)" };
+  // the flying figures (drawn over the frame, as in Figma): image size,
+  // centre, Figma tilt, shadow, and where the shoulder and the pointing
+  // fingertip are in the image (as fractions of its width / height)
+  const ankit = { w: 701.03, h: 520.84, cx: L(-133.57 + 771.71 / 2), cy: B(388.97 + 620.82 / 2), rotate: 8.69, shadow: "0 4px 12px rgba(0,0,0,0.5)", shoulder: [960 / 1455, 360 / 1081], tip: [1438 / 1455, 160 / 1081] };
+  const claude = { w: 683.63, h: 437.3, cx: R(738.72 + 792.73 / 2), cy: T(74.67 + 646.87 / 2), rotate: -20.25, shadow: "0 4px 20px rgba(0,0,0,0.8)", shoulder: [480 / 1568, 375 / 1003], tip: [52 / 1568, 374 / 1003] };
   const r2 = (n: number) => Math.round(n * 100) / 100; // same numbers on server and client
   const pieceImg = (p: Piece, i: number) => (
     // eslint-disable-next-line @next/next/no-img-element -- decorative
@@ -104,24 +106,43 @@ export default function MughalFrame() {
       style={{ left: r2(p.x), top: r2(p.y), width: r2(p.w * DS), height: r2(p.h * DS), transform: p.rotate ? `rotate(${p.rotate}deg)` : undefined }}
     />
   );
-  const figure = (src: string, f: typeof ankit) => (
-    // eslint-disable-next-line @next/next/no-img-element -- decorative figure
-    <img
-      src={src}
-      alt=""
-      aria-hidden="true"
-      draggable={false}
-      className="pointer-events-none absolute select-none"
-      style={{
-        left: r2(f.cx - (f.w * DS) / 2),
-        top: r2(f.cy - (f.h * DS) / 2),
-        width: r2(f.w * DS),
-        height: r2(f.h * DS),
-        transform: `rotate(${f.rotate}deg)`,
-        filter: `drop-shadow(${f.shadow})`,
-      }}
-    />
-  );
+  // Each figure sits where Figma puts it, then turns about its shoulder so
+  // the pointing finger always aims at the centre of the screen.
+  const figure = (src: string, f: typeof ankit) => {
+    const fw = f.w * DS, fh = f.h * DS;
+    const left = f.cx - fw / 2, top = f.cy - fh / 2;
+    const base = (f.rotate * Math.PI) / 180;
+    const turn = (x: number, y: number, a: number) => [x * Math.cos(a) - y * Math.sin(a), x * Math.sin(a) + y * Math.cos(a)];
+    // shoulder and fingertip on screen with the Figma tilt (about the image centre)
+    const sx = f.shoulder[0] * fw, sy = f.shoulder[1] * fh;
+    const [ox, oy] = turn(sx - fw / 2, sy - fh / 2, base);
+    const shoulder = [f.cx + ox, f.cy + oy];
+    const [ax, ay] = turn((f.tip[0] - f.shoulder[0]) * fw, (f.tip[1] - f.shoulder[1]) * fh, base);
+    // extra turn so shoulder -> fingertip points at the screen centre
+    const delta = Math.atan2(h / 2 - shoulder[1], w / 2 - shoulder[0]) - Math.atan2(ay, ax);
+    const angle = ((base + delta) * 180) / Math.PI;
+    // rotate about the shoulder, and move it to where the Figma tilt put it
+    const tx = shoulder[0] - (left + sx), ty = shoulder[1] - (top + sy);
+    return (
+      // eslint-disable-next-line @next/next/no-img-element -- decorative figure
+      <img
+        src={src}
+        alt=""
+        aria-hidden="true"
+        draggable={false}
+        className="pointer-events-none absolute select-none"
+        style={{
+          left: r2(left),
+          top: r2(top),
+          width: r2(fw),
+          height: r2(fh),
+          transformOrigin: `${r2(sx)}px ${r2(sy)}px`,
+          transform: `translate(${r2(tx)}px, ${r2(ty)}px) rotate(${r2(angle)}deg)`,
+          filter: `drop-shadow(${f.shadow})`,
+        }}
+      />
+    );
+  };
 
   const corner = (left: number, top: number, flip: string) => (
     // eslint-disable-next-line @next/next/no-img-element -- decorative SVG
