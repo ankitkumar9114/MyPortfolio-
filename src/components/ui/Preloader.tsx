@@ -206,7 +206,12 @@ export default function Preloader() {
   const containerRef = useRef<HTMLDivElement>(null);
   const wavesRef = useRef<HTMLDivElement>(null);
   const overlayRef = useRef<SVGSVGElement>(null);
-  const skip = useRef(isReducedMotion());
+  // Skipped under reduced motion - and, in development only, when the page
+  // is opened with ?noloader (the new loader's preview shows the site behind
+  // it in a frame and must not play this loader there).
+  const skip = useRef(
+    isReducedMotion() || (process.env.NODE_ENV !== "production" && typeof window !== "undefined" && new URLSearchParams(window.location.search).has("noloader")),
+  );
 
   useEffect(() => {
     if (skip.current) {

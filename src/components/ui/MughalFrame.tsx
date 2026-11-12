@@ -28,12 +28,29 @@ const INNER = "#A0251E"; // band gradient, inner edge
 const GOLD = "#F6A225"; // the ornaments' gold
 const GOLD_LINE = 2; // px, the inner gold line
 const TOUCH = 0.5; // px each fingertip stops short of the centre at 100% (they touch)
-const BLACK_LINE = GOLD_LINE; // px, the black line inside the gold one (same thickness)
+const BLACK_LINE = GOLD_LINE;
+// the energy burst and the reveal
+const SMOKE = ["255, 214, 90", "246, 178, 58", "255, 233, 160", "243, 154, 30"]; // golden smoke colours (r, g, b)
+const REVEAL_AT = 1000; // ms after the touch when the opening starts
+const REVEAL_MS = 1600; // ms for the opening to reach the corners
+const FEATHER = 160; // px (on a laptop screen): the opening's soft edge
+type Puff = { x: number; y: number; vx: number; vy: number; r: number; grow: number; spin: number; born: number; color: string; alpha: number }; // px, the black line inside the gold one (same thickness)
 
 // `progress` (0-100) drives the percentage and the figures' flight; without
 // it (the preview page) it counts up on its own so it can be seen working.
-export default function MughalFrame({ progress }: { progress?: number }) {
+//
+// At 100% the fingertips touch and golden energy bursts out from the touch,
+// spreading like smoke until it fills the page; a second in, a hole opens
+// in the centre and grows outwards, taking the loader (smoke and all) away
+// to show the site underneath. `onDone` fires when the loader is gone.
+export default function MughalFrame({ progress, onDone }: { progress?: number; onDone?: () => void }) {
   const [size, setSize] = useState({ w: 1440, h: 900 });
+  const rootRef = useRef<HTMLDivElement>(null);
+  const smokeRef = useRef<HTMLCanvasElement>(null);
+  const onDoneRef = useRef(onDone);
+  useEffect(() => {
+    onDoneRef.current = onDone;
+  }, [onDone]);
   // the flying figures and the number are moved straight in the DOM, every
   // frame, from a smoothed progress value (no React re-render per frame)
   const ankitRef = useRef<HTMLImageElement>(null);
@@ -180,20 +197,111 @@ export default function MughalFrame({ progress }: { progress?: number }) {
   // eslint-disable-next-line react-hooks/exhaustive-deps -- place() depends only on w and h
   const placed = useMemo(() => ({ ankit: place(ankit), claude: place(claude) }), [w, h]);
 
-  // The animation: one loop moves both figures and the number. The shown
-  // value eases towards the target (real progress, or the preview's own
-  // count), so jumps in real progress never make the figures jerk.
+  // The animation: one loop moves both figures and the number, then plays
+  // the energy burst and the reveal. The shown value eases towards the
+  // target (real progress, or the preview's own count), so jumps in real
+  // progress never make the figures jerk.
   useEffect(() => {
-    let raf = 0, last = performance.now(), shown = 0;
-    const start = performance.now();
+    const root = rootRef.current, canvas = smokeRef.current;
+    const ctx = canvas?.getContext("2d") ?? null;
+    if (canvas) {
+      canvas.width = w;
+      canvas.height = h;
+    }
+    const cx = w / 2, cy = h / 2;
+    const far = Math.hypot(w, h) / 2; // centre to the corners
+    const scale = far / 900; // smoke sizes/speeds are tuned for a laptop screen
+    let raf = 0, last = performance.now(), shown = 0, start = performance.now();
+    let touchAt = 0, finished = false, puffs: Puff[] = [], spawnUntil = 0;
+
+    const setHole = (r: number) => {
+      if (!root) return;
+      // the opening: clear inside r, the loader beyond it, with a soft edge
+      const m = r <= 0 ? "" : `radial-gradient(circle at 50% 50%, transparent ${r2(r)}px, #000 ${r2(r + FEATHER * scale)}px)`;
+      root.style.maskImage = m;
+      root.style.setProperty("-webkit-mask-image", m);
+    };
+    const reset = () => {
+      touchAt = 0;
+      finished = false;
+      puffs = [];
+      setHole(0);
+      if (root) root.style.visibility = "";
+      ctx?.clearRect(0, 0, w, h);
+    };
+    reset();
+
+    const spawn = (n: number, now: number) => {
+      for (let i = 0; i < n; i++) {
+        const a = Math.random() * Math.PI * 2;
+        const v = (260 + Math.random() * 760) * scale;
+        puffs.push({
+          x: cx + Math.cos(a) * 6, y: cy + Math.sin(a) * 6,
+          vx: Math.cos(a) * v, vy: Math.sin(a) * v,
+          r: (14 + Math.random() * 30) * scale,
+          grow: (140 + Math.random() * 260) * scale,
+          spin: (Math.random() - 0.5) * 1.6, // curl of the smoke
+          born: now,
+          color: SMOKE[(Math.random() * SMOKE.length) | 0],
+          alpha: 0.28 + Math.random() * 0.3,
+        });
+      }
+    };
+
+    const drawSmoke = (now: number, dt: number) => {
+      if (!ctx) return;
+      ctx.clearRect(0, 0, w, h);
+      const e = (now - touchAt) / 1000;
+      // a warm wash under the puffs, so the page ends up fully covered
+      const wash = far * 1.15 * (1 - Math.pow(1 - Math.min(1, e / 1.5), 3));
+      const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, Math.max(1, wash));
+      g.addColorStop(0, "rgba(255, 236, 170, 0.95)");
+      g.addColorStop(0.55, "rgba(255, 196, 80, 0.8)");
+      g.addColorStop(0.85, "rgba(246, 162, 37, 0.45)");
+      g.addColorStop(1, "rgba(246, 162, 37, 0)");
+      ctx.fillStyle = g;
+      ctx.fillRect(0, 0, w, h);
+      // the smoke: soft puffs drifting out, slowing, curling and swelling
+      for (const p of puffs) {
+        const drag = Math.exp(-1.6 * dt);
+        const vx = p.vx, vy = p.vy;
+        p.vx = (vx - vy * p.spin * dt) * drag;
+        p.vy = (vy + vx * p.spin * dt) * drag;
+        p.x += p.vx * dt;
+        p.y += p.vy * dt;
+        p.r += p.grow * dt;
+        const age = (now - p.born) / 1000;
+        const a = p.alpha * Math.min(1, age / 0.15);
+        const pg = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, p.r);
+        pg.addColorStop(0, `rgba(${p.color}, ${a})`);
+        pg.addColorStop(0.6, `rgba(${p.color}, ${a * 0.45})`);
+        pg.addColorStop(1, `rgba(${p.color}, 0)`);
+        ctx.fillStyle = pg;
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      // the flash where the fingertips touch
+      const f = Math.max(0, 1 - e / 0.6);
+      if (f > 0) {
+        const fr = (30 + 260 * e) * scale;
+        const fg = ctx.createRadialGradient(cx, cy, 0, cx, cy, fr);
+        fg.addColorStop(0, `rgba(255, 255, 240, ${f})`);
+        fg.addColorStop(0.4, `rgba(255, 230, 140, ${f * 0.8})`);
+        fg.addColorStop(1, "rgba(255, 210, 90, 0)");
+        ctx.fillStyle = fg;
+        ctx.fillRect(cx - fr, cy - fr, fr * 2, fr * 2);
+      }
+    };
+
     const tick = (now: number) => {
-      const dt = Math.min(0.1, (now - last) / 1000);
+      const dt = Math.min(0.05, (now - last) / 1000);
       last = now;
       let target = targetRef.current;
       if (target === undefined) {
-        // preview: 0 -> 100 over 4.5s (smooth in and out), hold 1.5s, again
-        const t = ((now - start) / 1000) % 6;
-        const u = Math.min(1, t / 4.5);
+        // preview: 0 -> 100 over 4.5s (smooth in and out); after the reveal
+        // and a pause, it starts again
+        const u = Math.min(1, (now - start) / 4500);
         target = 100 * (0.5 - Math.cos(Math.PI * u) / 2);
         shown = target; // already smooth
       } else {
@@ -201,18 +309,49 @@ export default function MughalFrame({ progress }: { progress?: number }) {
         shown += (target - shown) * Math.min(1, dt * 5);
         if (Math.abs(target - shown) < 0.02) shown = target;
       }
-      const reach = shown / 100;
-      if (ankitRef.current) ankitRef.current.style.transform = transformAt(placed.ankit, reach);
-      if (claudeRef.current) claudeRef.current.style.transform = transformAt(placed.claude, reach);
-      const n = String(Math.floor(shown + 1e-6));
-      if (numRef.current && numRef.current.textContent !== n) {
-        numRef.current.textContent = n;
-        statusRef.current?.setAttribute("aria-label", `Loading ${n}%`);
+      if (!touchAt) {
+        const reach = shown / 100;
+        if (ankitRef.current) ankitRef.current.style.transform = transformAt(placed.ankit, reach);
+        if (claudeRef.current) claudeRef.current.style.transform = transformAt(placed.claude, reach);
+        const n = String(Math.floor(shown + 1e-6));
+        if (numRef.current && numRef.current.textContent !== n) {
+          numRef.current.textContent = n;
+          statusRef.current?.setAttribute("aria-label", `Loading ${n}%`);
+        }
+        // the touch
+        if (shown >= 100) {
+          touchAt = now;
+          spawnUntil = now + 700;
+          spawn(70, now);
+        }
+      } else if (!finished) {
+        const e = now - touchAt;
+        if (now < spawnUntil) spawn(Math.round(260 * dt), now); // keeps pouring out for a moment
+        drawSmoke(now, dt);
+        // the reveal: from 1s after the touch, the opening grows from the
+        // centre past the corners
+        if (e > REVEAL_AT) {
+          const u = Math.min(1, (e - REVEAL_AT) / REVEAL_MS);
+          setHole((far + FEATHER * scale) * (u * u * (3 - 2 * u)) * 1.02);
+          if (u >= 1) {
+            finished = true;
+            if (root) root.style.visibility = "hidden";
+            onDoneRef.current?.();
+          }
+        }
+      } else if (targetRef.current === undefined && now - touchAt > REVEAL_AT + REVEAL_MS + 2000) {
+        // preview: show the site for 2s, then play it all again
+        reset();
+        start = now;
+        shown = 0;
       }
       raf = requestAnimationFrame(tick);
     };
     raf = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(raf);
+    return () => {
+      cancelAnimationFrame(raf);
+      reset();
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- transformAt only reads r2
   }, [placed]);
 
@@ -229,7 +368,7 @@ export default function MughalFrame({ progress }: { progress?: number }) {
     />
   );
   return (
-    <div className="fixed inset-0 overflow-hidden" style={{ background: "#002F2A url('/images/loader-bg-teal.webp') center / cover" }}>
+    <div ref={rootRef} className="fixed inset-0 z-[1000] overflow-hidden" style={{ background: "#002F2A url('/images/loader-bg-teal.webp') center / cover" }}>
       {/* corner plant panels */}
       {/* eslint-disable-next-line @next/next/no-img-element -- decorative */}
       <img src="/images/corner-plant.webp" alt="" aria-hidden="true" draggable={false} className="pointer-events-none absolute select-none" style={{ left: inset, top: inset, width: pw, height: ph }} />
@@ -308,6 +447,8 @@ export default function MughalFrame({ progress }: { progress?: number }) {
       {/* flying Ankit and flying Claude, over the frame */}
       {figure("/images/flying-ankit.webp", placed.ankit, ankit.shadow, ankitRef)}
       {figure("/images/flying-claude.webp", placed.claude, claude.shadow, claudeRef)}
+      {/* the golden energy from the touch, spreading like smoke */}
+      <canvas ref={smokeRef} aria-hidden="true" className="pointer-events-none absolute inset-0" style={{ width: w, height: h }} />
     </div>
   );
 }
