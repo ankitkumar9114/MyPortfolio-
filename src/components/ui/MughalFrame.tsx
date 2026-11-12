@@ -14,6 +14,9 @@ import { PLANT } from "./cornerPlantEdge";
 // so a tile is never cut off at a corner. The band is BAND px thick.
 
 const P = "/graphics/loader-frame/";
+// the flying figures (cropped webp sizes) and where each fingertip is
+const ANKIT = { w: 1390, h: 835, tip: [1388, 169] as const };
+const CLAUDE = { w: 1235, h: 716, tip: [1, 336] as const };
 const CORNER = { w: 39, h: 40 }; // top-left L, arms 18 thick
 const TILE = { w: 49, h: 18 }; // band tile
 const BAND = 20; // border thickness on screen (px)
@@ -63,6 +66,17 @@ export default function MughalFrame() {
   const ps = 0.7 * Math.min(1, Math.max(150, w * 0.27) / PLANT.w); // plant scale (70% of the earlier size)
   const pw = PLANT.w * ps, ph = PLANT.h * ps;
 
+  // --- flying Ankit and flying Claude, reaching for each other (as in the
+  // reference painting): Ankit lower left, Claude upper right, fingertips
+  // almost touching just above the centre. Same scale for both, sized to
+  // fit the space inside the frame.
+  const innerW = w - 2 * inset, innerH = h - 2 * inset;
+  const fs = Math.min(0.42, (0.9 * innerW) / (ANKIT.w + CLAUDE.w), (0.62 * innerH) / (CLAUDE.tip[1] + ANKIT.h - ANKIT.tip[1] + 40));
+  const gap = 18 * fs; // between the fingertips
+  const meetX = w / 2, meetY = h * 0.46;
+  const ankit = { left: meetX - gap - ANKIT.tip[0] * fs, top: meetY + 20 * fs - ANKIT.tip[1] * fs, width: ANKIT.w * fs, height: ANKIT.h * fs };
+  const claude = { left: meetX + gap - CLAUDE.tip[0] * fs, top: meetY - 20 * fs - CLAUDE.tip[1] * fs, width: CLAUDE.w * fs, height: CLAUDE.h * fs };
+
   const corner = (left: number, top: number, flip: string) => (
     // eslint-disable-next-line @next/next/no-img-element -- decorative SVG
     <img
@@ -110,6 +124,11 @@ export default function MughalFrame() {
         {/* black line just inside the gold one, touching it all the way round */}
         <rect x={t + GOLD_LINE + BLACK_LINE / 2} y={t + GOLD_LINE + BLACK_LINE / 2} width={w - 2 * (t + GOLD_LINE) - BLACK_LINE} height={h - 2 * (t + GOLD_LINE) - BLACK_LINE} fill="none" stroke="#000000" strokeWidth={BLACK_LINE} />
       </svg>
+      {/* flying Ankit and flying Claude */}
+      {/* eslint-disable-next-line @next/next/no-img-element -- decorative figure */}
+      <img src="/images/flying-ankit.webp" alt="" aria-hidden="true" draggable={false} className="pointer-events-none absolute select-none" style={ankit} />
+      {/* eslint-disable-next-line @next/next/no-img-element -- decorative figure */}
+      <img src="/images/flying-claude.webp" alt="" aria-hidden="true" draggable={false} className="pointer-events-none absolute select-none" style={claude} />
       {/* corner plant panels */}
       {/* eslint-disable-next-line @next/next/no-img-element -- decorative */}
       <img src="/images/corner-plant.webp" alt="" aria-hidden="true" draggable={false} className="pointer-events-none absolute select-none" style={{ left: inset, top: inset, width: pw, height: ph }} />
