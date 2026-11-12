@@ -454,30 +454,3 @@ body {
     print-color-adjust: exact;
   }
 }
-
-/* Loader: the light between the two hands - a wide, soft breathing glow. */
-@keyframes energy-breathe {
-  0%, 100% { transform: scale(1); opacity: 0.85; }
-  50% { transform: scale(1.06); opacity: 1; }
-}
-.energy-glow {
-  /* wide and soft, like light spreading from the spark (the reference) */
-  background: radial-gradient(circle, rgba(255, 200, 120, 0.95) 0%, rgba(255, 150, 50, 0.55) 10%, rgba(245, 125, 35, 0.3) 28%, rgba(230, 110, 30, 0.13) 50%, rgba(230, 110, 30, 0) 72%);
-  mix-blend-mode: plus-lighter; /* adds light to the teal, like a real glow */
-  animation: energy-breathe 2.2s ease-in-out infinite;
-}
-/* faint rays of light from the spark, slowly turning */
-@keyframes energy-rays-turn {
-  to { transform: rotate(360deg); }
-}
-.energy-rays {
-  background: repeating-conic-gradient(from 0deg, rgba(255, 200, 120, 0.5) 0deg 0.6deg, rgba(255, 200, 120, 0) 0.6deg 9deg);
-  -webkit-mask-image: radial-gradient(circle, #000 0%, rgba(0, 0, 0, 0.5) 25%, transparent 60%);
-  mask-image: radial-gradient(circle, #000 0%, rgba(0, 0, 0, 0.5) 25%, transparent 60%);
-  mix-blend-mode: screen;
-  opacity: 0.35;
-  animation: energy-rays-turn 60s linear infinite;
-}
-@media (prefers-reduced-motion: reduce) {
-  .energy-glow, .energy-rays { animation: none; }
-}
