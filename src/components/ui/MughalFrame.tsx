@@ -96,8 +96,9 @@ export default function MughalFrame() {
         <path d={`M0 0V${h}L${t} ${h - t}V${t}Z`} fill="url(#band-left)" />
         <path d={`M${w} 0V${h}L${w - t} ${h - t}V${t}Z`} fill="url(#band-right)" />
         {tiles}
-        {/* gold line along the band's inner edge, all the way round */}
-        <rect x={t - GOLD_LINE / 2} y={t - GOLD_LINE / 2} width={w - 2 * t + GOLD_LINE} height={h - 2 * t + GOLD_LINE} fill="none" stroke={GOLD} strokeWidth={GOLD_LINE} />
+        {/* gold line just outside the band (on the background), touching its
+            inner edge all the way round */}
+        <rect x={t + GOLD_LINE / 2} y={t + GOLD_LINE / 2} width={w - 2 * t - GOLD_LINE} height={h - 2 * t - GOLD_LINE} fill="none" stroke={GOLD} strokeWidth={GOLD_LINE} />
       </svg>
       {corner(0, 0, "none")}
       {corner(w - cw, 0, "scaleX(-1)")}
