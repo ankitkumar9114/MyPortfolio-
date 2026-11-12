@@ -467,3 +467,51 @@ body {
 @media (prefers-reduced-motion: reduce) {
   .mandala-spin { animation: none; }
 }
+
+/* Loader (golden ending): the energy orb at the mandala's centre before the
+   touch. Each part animates on its own (CSS); MughalFrame only scales the
+   whole orb and sets how strong each part is as the characters approach. */
+@keyframes orb-pulse {
+  0%, 100% { transform: scale(0.9); }
+  50% { transform: scale(1.08); }
+}
+@keyframes orb-spin {
+  to { transform: rotate(360deg); }
+}
+@keyframes orb-spin-back {
+  to { transform: rotate(-360deg); }
+}
+/* a mote drawn in from --dx/--dy to the centre */
+@keyframes orb-attract {
+  0% { transform: translate(var(--dx), var(--dy)) scale(0.6); opacity: 0; }
+  25% { opacity: 0.9; }
+  100% { transform: translate(0, 0) scale(0.3); opacity: 0; }
+}
+/* thin arcs crackling on and off */
+@keyframes orb-arc {
+  0%, 62%, 70%, 100% { opacity: 0; }
+  64%, 68% { opacity: 1; }
+  66% { opacity: 0.3; }
+}
+.orb-core {
+  border-radius: 50%;
+  background: radial-gradient(circle at 46% 42%, #ffe6b0 0%, #ffc560 22%, #f2a531 46%, #d9781e 68%, rgba(184, 94, 20, 0) 100%);
+  animation: orb-pulse 1.6s ease-in-out infinite;
+}
+.orb-halo {
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(242, 165, 49, 0.42) 0%, rgba(217, 140, 40, 0.18) 35%, rgba(217, 140, 40, 0) 70%);
+  animation: orb-pulse 1.6s ease-in-out infinite;
+}
+.orb-orbit { animation: orb-spin 3.2s linear infinite; }
+.orb-orbit-back { animation: orb-spin-back 4.6s linear infinite; }
+.orb-mote {
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(255, 220, 140, 1) 0%, rgba(242, 165, 49, 0.7) 45%, rgba(242, 165, 49, 0) 75%);
+}
+.orb-attract { animation: orb-attract 1.3s ease-in infinite; }
+.orb-streams { animation: orb-spin 2.4s linear infinite; }
+.orb-arc { animation: orb-arc 1.1s steps(1) infinite; }
+@media (prefers-reduced-motion: reduce) {
+  .orb-core, .orb-halo, .orb-orbit, .orb-orbit-back, .orb-attract, .orb-streams, .orb-arc { animation: none; }
+}

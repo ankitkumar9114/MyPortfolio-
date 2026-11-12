@@ -34,6 +34,11 @@ const GOLD_LINE = 2; // px, the inner gold line
 const TOUCH = 0.5; // px each fingertip stops short of the centre at 100% (they touch)
 const BLACK_LINE = GOLD_LINE;
 const FLIGHT_MIN_S = 2.6; // the figures never fly in faster than this (0 -> 100%)
+// the golden ending's build-up: the orb shows alone for ORB_HOLD_S, then the
+// characters fly in over at least GOLD_FLIGHT_S, so the touch is at 2.2 s
+// (when the page is already loaded)
+const ORB_HOLD_S = 0.5;
+const GOLD_FLIGHT_S = 1.7;
 
 // `progress` (0-100, real loading progress from MughalLoader) drives the
 // percentage and the figures' flight.
@@ -57,6 +62,14 @@ export default function MughalFrame({ progress = 0, reveal = LOADER_REVEAL, onRe
   const litLineRef = useRef<SVGSVGElement>(null);
   const pulseRef = useRef<HTMLDivElement>(null);
   const ringRef = useRef<HTMLDivElement>(null);
+  // the golden ending's orb and the orb's light on the two characters
+  const orbRef = useRef<HTMLDivElement>(null);
+  const orbHaloRef = useRef<HTMLDivElement>(null);
+  const orbAttractRef = useRef<HTMLDivElement>(null);
+  const orbStreamsRef = useRef<SVGSVGElement>(null);
+  const orbArcsRef = useRef<SVGSVGElement>(null);
+  const ankitGlowRef = useRef<HTMLDivElement>(null);
+  const claudeGlowRef = useRef<HTMLDivElement>(null);
   const cbRef = useRef({ onReveal, onDone });
   useEffect(() => {
     cbRef.current = { onReveal, onDone };
@@ -182,6 +195,30 @@ export default function MughalFrame({ progress = 0, reveal = LOADER_REVEAL, onRe
     };
   };
   type Placed = ReturnType<typeof place>;
+  // the orb's warm light on a character: a gold glow from the fingertip
+  // side, masked to the figure's own shape, moved with it
+  const figureLight = (src: string, g: Placed, tip: number[], ref: React.RefObject<HTMLDivElement | null>) => (
+    <div
+      ref={ref}
+      aria-hidden="true"
+      className="pointer-events-none absolute will-change-transform"
+      style={{
+        left: r2(g.left),
+        top: r2(g.top),
+        width: r2(g.fw),
+        height: r2(g.fh),
+        transformOrigin: `${r2(g.sx)}px ${r2(g.sy)}px`,
+        transform: transformAt(g, 0),
+        opacity: 0,
+        mixBlendMode: "screen",
+        background: `radial-gradient(circle at ${r2(tip[0] * 100)}% ${r2(tip[1] * 100)}%, rgba(255, 196, 96, 0.85) 0%, rgba(242, 160, 50, 0.45) 22%, rgba(217, 120, 30, 0.12) 50%, rgba(217, 120, 30, 0) 72%)`,
+        maskImage: `url(${src})`,
+        WebkitMaskImage: `url(${src})`,
+        maskSize: "100% 100%",
+        WebkitMaskSize: "100% 100%",
+      }}
+    />
+  );
   const transformAt = (g: Placed, reach: number) => `translate(${r2(g.tx + g.gx * reach)}px, ${r2(g.ty + g.gy * reach)}px) rotate(${r2(g.angle)}deg)`;
   const figure = (src: string, g: Placed, shadow: string, ref: React.RefObject<HTMLImageElement | null>) => (
     // eslint-disable-next-line @next/next/no-img-element -- decorative figure
@@ -237,7 +274,28 @@ export default function MughalFrame({ progress = 0, reveal = LOADER_REVEAL, onRe
   // flight), so jumps in loading never make the figures jerk.
   useEffect(() => {
     const root = rootRef.current;
-    let raf = 0, last = performance.now(), shown = 0, touched = false;
+    let raf = 0, last = 0, start = 0, shown = 0, touched = false;
+    const golden = reveal === "golden";
+    const flightS = golden ? GOLD_FLIGHT_S : FLIGHT_MIN_S;
+    // development only: when the loader started and when they touched, for
+    // the preview's clock
+    const dbg = (process.env.NODE_ENV !== "production" ? window : {}) as { __loaderStart?: number; __loaderTouch?: number };
+    dbg.__loaderTouch = undefined;
+    // the golden build-up as they approach (k: 0 far apart .. 1 touching)
+    const buildUp = (k: number) => {
+      const orb = orbRef.current;
+      if (!orb) return;
+      orb.style.transform = `scale(${r2(1 + 1.9 * Math.pow(k, 1.6))})`;
+      if (orbHaloRef.current) orbHaloRef.current.style.opacity = String(r2(0.35 + 0.65 * k));
+      if (orbAttractRef.current) orbAttractRef.current.style.opacity = String(r2(Math.min(1, Math.max(0, (k - 0.05) / 0.3))));
+      if (orbStreamsRef.current) orbStreamsRef.current.style.opacity = String(r2(Math.min(0.9, Math.max(0, (k - 0.55) / 0.35))));
+      if (orbArcsRef.current) orbArcsRef.current.style.opacity = String(r2(Math.min(1, Math.max(0, (k - 0.72) / 0.2))));
+      const light = String(r2(Math.pow(k, 1.4) * 0.95));
+      if (ankitGlowRef.current) ankitGlowRef.current.style.opacity = light;
+      if (claudeGlowRef.current) claudeGlowRef.current.style.opacity = light;
+      // the mandala starts to light up (opacity only - no filters)
+      for (const el of [mandalaImgRef.current, mandalaLineRef.current]) if (el) el.style.opacity = String(r2(0.3 + 0.35 * k));
+    };
 
     // the loader is cut along the golden wave's ragged edge (the same
     // formula the shader draws), so the site shows inside it
@@ -254,7 +312,7 @@ export default function MughalFrame({ progress = 0, reveal = LOADER_REVEAL, onRe
     const mandalaGlow = (g: number) => {
       for (const el of [mandalaImgRef.current, mandalaLineRef.current]) {
         if (!el) continue;
-        el.style.opacity = String(r2(0.3 + 0.6 * g));
+        el.style.opacity = String(r2(0.65 + 0.35 * g));
         el.style.filter = g > 0.01 ? `brightness(${r2(1 + 0.9 * g)}) drop-shadow(0 0 ${r2(14 * g)}px rgba(242, 181, 68, ${r2(0.85 * g)}))` : "";
       }
     };
@@ -274,6 +332,11 @@ export default function MughalFrame({ progress = 0, reveal = LOADER_REVEAL, onRe
         playMandalaReveal({ root, box: els.box, litWrap: els.litWrap, litInner: els.litInner, litLine: els.litLine, pulse: els.pulse, wave: els.wave, fade }, gsap, hooks, isReducedMotion());
         return;
       }
+      dbg.__loaderTouch = performance.now();
+      if (reveal === "golden") {
+        // the orb bursts outwards into the explosion
+        if (orbRef.current) gsap.to(orbRef.current, { scale: 6, opacity: 0, duration: 0.35, ease: "power2.out" });
+      }
       if (reveal === "golden" && fx.current) {
         fx.current.play(hooks);
         return;
@@ -285,14 +348,24 @@ export default function MughalFrame({ progress = 0, reveal = LOADER_REVEAL, onRe
     };
 
     const tick = (now: number) => {
+      if (!start) {
+        start = last = now;
+        dbg.__loaderStart = now;
+      }
       const dt = Math.min(0.05, (now - last) / 1000);
       last = now;
-      const target = Math.min(100, Math.max(0, targetRef.current ?? 0));
-      if (target > shown) shown = Math.min(target, shown + Math.min((target - shown) * dt * 5 + 2 * dt, (100 / FLIGHT_MIN_S) * dt));
+      // the golden ending holds still for ORB_HOLD_S first (the orb alone)
+      const target = golden && now - start < ORB_HOLD_S * 1000 ? 0 : Math.min(100, Math.max(0, targetRef.current ?? 0));
+      if (target > shown) shown = Math.min(target, shown + Math.min((target - shown) * dt * 5 + 2 * dt, (100 / flightS) * dt));
       if (target - shown < 0.05) shown = target;
       const reach = shown / 100;
       if (ankitRef.current) ankitRef.current.style.transform = transformAt(placed.ankit, reach);
       if (claudeRef.current) claudeRef.current.style.transform = transformAt(placed.claude, reach);
+      if (golden) {
+        if (ankitGlowRef.current) ankitGlowRef.current.style.transform = transformAt(placed.ankit, reach);
+        if (claudeGlowRef.current) claudeGlowRef.current.style.transform = transformAt(placed.claude, reach);
+        buildUp(reach);
+      }
       const n = String(Math.floor(shown + 1e-6));
       if (numRef.current && numRef.current.textContent !== n) {
         numRef.current.textContent = n;
@@ -427,8 +500,11 @@ export default function MughalFrame({ progress = 0, reveal = LOADER_REVEAL, onRe
         </span>
       </div>
       {/* flying Ankit and flying Claude, over the frame */}
+      {reveal === "golden" && <Orb size={mh * 0.42} cx={w / 2} cy={h / 2} orbRef={orbRef} haloRef={orbHaloRef} attractRef={orbAttractRef} streamsRef={orbStreamsRef} arcsRef={orbArcsRef} />}
       {figure("/images/flying-ankit.webp", placed.ankit, ankit.shadow, ankitRef)}
       {figure("/images/flying-claude.webp", placed.claude, claude.shadow, claudeRef)}
+      {reveal === "golden" && figureLight("/images/flying-ankit.webp", placed.ankit, ankit.tip, ankitGlowRef)}
+      {reveal === "golden" && figureLight("/images/flying-claude.webp", placed.claude, claude.tip, claudeGlowRef)}
       </div>
       {/* the golden energy sequence (goldenReveal.ts): a transparent three.js
           canvas over the loader and the site */}
@@ -437,3 +513,63 @@ export default function MughalFrame({ progress = 0, reveal = LOADER_REVEAL, onRe
   );
 }
 
+// The golden ending's energy orb (before the touch): a warm pulsing core and
+// halo, motes orbiting it, motes drawn in towards it, circling energy
+// streams and a few crackling arcs - all CSS/SVG (globals.css, orb-*).
+// MughalFrame scales it and sets each part's strength as the characters
+// approach. `size` is the orb's whole box; the core is a small part of it.
+type DivRef = React.RefObject<HTMLDivElement | null>;
+type SvgRef = React.RefObject<SVGSVGElement | null>;
+function Orb({ size, cx, cy, orbRef, haloRef, attractRef, streamsRef, arcsRef }: { size: number; cx: number; cy: number; orbRef: DivRef; haloRef: DivRef; attractRef: DivRef; streamsRef: SvgRef; arcsRef: SvgRef }) {
+  const q = (n: number) => Math.round(n * 100) / 100;
+  const core = size * 0.13, mote = Math.max(3, size * 0.022);
+  // motes drawn in from all round (fixed, so server and browser agree)
+  const pulls = Array.from({ length: 12 }, (_, i) => {
+    const a = (i / 12) * Math.PI * 2 + (i % 3) * 0.4, d = size * (0.38 + (i % 4) * 0.05);
+    return { dx: q(Math.cos(a) * d), dy: q(Math.sin(a) * d), delay: q((i * 0.37) % 1.3) };
+  });
+  // a few thin jagged arcs round the core
+  const arcs = Array.from({ length: 5 }, (_, i) => {
+    const a0 = (i / 5) * Math.PI * 2 + 0.3, pts: string[] = [];
+    for (let k = 0; k <= 5; k++) {
+      const a = a0 + k * 0.16, r = 0.5 * (0.17 + ((k * 7 + i * 3) % 5) * 0.012) * 2;
+      pts.push(`${q(50 + Math.cos(a) * r * 50)} ${q(50 + Math.sin(a) * r * 50)}`);
+    }
+    return { d: `M${pts.join("L")}`, delay: q(i * 0.23) };
+  });
+  return (
+    <div ref={orbRef} aria-hidden="true" className="pointer-events-none absolute will-change-transform" style={{ left: q(cx - size / 2), top: q(cy - size / 2), width: q(size), height: q(size) }}>
+      <div ref={haloRef} className="orb-halo absolute" style={{ left: q(size * 0.2), top: q(size * 0.2), width: q(size * 0.6), height: q(size * 0.6), opacity: 0.35 }} />
+      {/* motes drawn in towards the orb */}
+      <div ref={attractRef} className="absolute inset-0" style={{ opacity: 0 }}>
+        {pulls.map((p, i) => (
+          <div key={i} className="orb-mote orb-attract absolute" style={{ left: q(size / 2 - mote / 2), top: q(size / 2 - mote / 2), width: q(mote), height: q(mote), ["--dx" as string]: `${p.dx}px`, ["--dy" as string]: `${p.dy}px`, animationDelay: `${p.delay}s` }} />
+        ))}
+      </div>
+      {/* circling energy streams */}
+      <svg ref={streamsRef} viewBox="0 0 100 100" className="orb-streams absolute inset-0 h-full w-full overflow-visible" style={{ opacity: 0 }}>
+        <ellipse cx="50" cy="50" rx="17" ry="9" fill="none" stroke="#F2B544" strokeWidth="0.6" strokeLinecap="round" strokeDasharray="14 40" transform="rotate(-25 50 50)" />
+        <ellipse cx="50" cy="50" rx="15" ry="11" fill="none" stroke="#FFD27A" strokeWidth="0.45" strokeLinecap="round" strokeDasharray="10 30" transform="rotate(40 50 50)" />
+        <circle cx="50" cy="50" r="13" fill="none" stroke="#E8892B" strokeWidth="0.35" strokeDasharray="5 12" opacity="0.8" />
+      </svg>
+      {/* thin crackling arcs */}
+      <svg ref={arcsRef} viewBox="0 0 100 100" className="absolute inset-0 h-full w-full overflow-visible" style={{ opacity: 0 }}>
+        {arcs.map((a, i) => (
+          <path key={i} className="orb-arc" d={a.d} fill="none" stroke="#FFE2A0" strokeWidth="0.35" strokeLinejoin="round" style={{ animationDelay: `${a.delay}s` }} />
+        ))}
+      </svg>
+      {/* the core, with motes orbiting it */}
+      <div className="orb-core absolute" style={{ left: q(size / 2 - core / 2), top: q(size / 2 - core / 2), width: q(core), height: q(core) }} />
+      <div className="orb-orbit absolute" style={{ left: q(size * 0.36), top: q(size * 0.36), width: q(size * 0.28), height: q(size * 0.28) }}>
+        {[0, 1, 2].map((i) => (
+          <div key={i} className="orb-mote absolute" style={{ left: q(size * 0.14 + Math.cos((i * 2 * Math.PI) / 3) * size * 0.13 - mote / 2), top: q(size * 0.14 + Math.sin((i * 2 * Math.PI) / 3) * size * 0.13 - mote / 2), width: q(mote), height: q(mote) }} />
+        ))}
+      </div>
+      <div className="orb-orbit-back absolute" style={{ left: q(size * 0.31), top: q(size * 0.31), width: q(size * 0.38), height: q(size * 0.38) }}>
+        {[0, 1].map((i) => (
+          <div key={i} className="orb-mote absolute" style={{ left: q(size * 0.19 + Math.cos(i * Math.PI + 0.8) * size * 0.19 - mote * 0.4), top: q(size * 0.19 + Math.sin(i * Math.PI + 0.8) * size * 0.19 - mote * 0.4), width: q(mote * 0.8), height: q(mote * 0.8) }} />
+        ))}
+      </div>
+    </div>
+  );
+}

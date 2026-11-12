@@ -7,13 +7,15 @@
 //
 // Timeline (seconds from the touch; one GSAP timeline drives everything and
 // is also the clock the shaders read):
-//   0.0-0.2  spark: a tiny glowing core and a point light at the contact point
-//   0.2-0.8  explosion: particles, concentric rings, curved trails, shockwave;
+// (MughalFrame's orb has already built the energy up before the touch)
+//   0.0-0.06 spark: the core flares, the point light comes on
+//   0.06-0.6 explosion: particles, concentric rings, curved trails, shockwave;
 //            the mandala lights up for a moment
-//   0.8-2.0  reveal: the wave (a ragged golden outline) runs out to the
+//   0.6-1.3  the energy settles, the mandala still lit
+//   1.3-2.5  reveal (3.5 s from the loader's start): the wave (a ragged golden outline) runs out to the
 //            corners; inside it the loader is cut away (MughalFrame applies
 //            the same edge as a clip-path) and turns into golden particles
-//   2.0-2.5  everything left fades out; then dispose and stop
+//   2.5-3.0  everything left fades out; then dispose and stop
 //
 // Coordinates: the camera is placed so the z = 0 plane maps 1:1 to CSS
 // pixels, origin at the screen centre, y up - so a screen point (px, py) is
@@ -50,10 +52,10 @@ export const waveEdge = (a: number, t: number) =>
   0.55 * Math.sin(7 * a + 2.1 * t) + 0.3 * Math.sin(13 * a - 2.9 * t + 1.7) + 0.15 * Math.sin(23 * a + 4.3 * t + 0.6);
 
 // the timeline (s)
-const SPARK_END = 0.2;
-const REVEAL_START = 0.8;
-const REVEAL_END = 2.0;
-const END = 2.5;
+const SPARK_END = 0.06;
+const REVEAL_START = 1.3; // the touch is at 2.2 s, so this is 3.5 s from the start
+const REVEAL_END = 2.5;
+const END = 3.0;
 
 // palette: deep antique gold, amber, warm orange (sRGB; three converts)
 const GOLD = "#D9A23A";
@@ -575,8 +577,10 @@ export function createGoldenReveal(kit: Kit, canvas: HTMLCanvasElement, width: n
       .to(st, { shock: 1, duration: 0.75, ease: "power2.out" }, SPARK_END + 0.04)
       .fromTo(st, { shockA: 1 }, { shockA: 0, duration: 0.75, ease: "power1.in" }, SPARK_END + 0.04)
       .to(st, { mandala: 1, duration: 0.25, ease: "power2.out" }, SPARK_END)
-      .to(st, { mandala: 0, duration: 0.7, ease: "power1.inOut" }, SPARK_END + 0.35)
-      .to(st, { light: 0.25, duration: 0.8, ease: "power1.out" }, SPARK_END + 0.25)
+      // the mandala stays awake (a little softer) until the reveal
+      .to(st, { mandala: 0.7, duration: 0.6, ease: "power1.inOut" }, SPARK_END + 0.4)
+      .to(st, { light: 0.3, duration: 0.8, ease: "power1.out" }, SPARK_END + 0.25)
+      .to(st, { mandala: 0, duration: REVEAL_END - REVEAL_START, ease: "power1.in" }, REVEAL_START)
       // 3. the reveal
       .to(st, { waveA: 1, duration: 0.15 }, REVEAL_START)
       .to(st, { wave: 1, duration: REVEAL_END - REVEAL_START, ease: "power2.inOut" }, REVEAL_START)

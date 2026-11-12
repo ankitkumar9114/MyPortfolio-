@@ -8,18 +8,21 @@ import { LOADER_REVEAL, LOADER_REVEAL_NAMES, type LoaderReveal } from "@/lib/loa
 // (window.__mandalaTl / __goldenTl): the clock below reads them, and the
 // slider and pause button drive them.
 type Tl = { time: (t?: number) => number; duration: () => number; pause: (t?: number) => unknown; seek: (t: number, suppressEvents?: boolean) => unknown; play: () => unknown; paused: () => boolean };
-type Win = { __mandalaTl?: Tl; __goldenTl?: Tl };
-const KEY: Record<LoaderReveal, keyof Win> = { mandala: "__mandalaTl", golden: "__goldenTl" };
+type Win = { __mandalaTl?: Tl; __goldenTl?: Tl; __loaderStart?: number; __loaderTouch?: number };
+const KEY: Record<LoaderReveal, "__mandalaTl" | "__goldenTl"> = { mandala: "__mandalaTl", golden: "__goldenTl" };
 
 // The loader over the real site (an iframe of the home page with ?noloader,
 // so the site's own loader doesn't play inside it). Pick an ending to play
 // it; the site's active one is set in lib/loaderReveal.ts. The clock shows
-// the seconds since the fingertips touched.
+// the seconds since the loader started (the slider moves within the part
+// after the fingertips touch).
 export default function LoaderPreview() {
   const [reveal, setReveal] = useState<LoaderReveal>(LOADER_REVEAL);
   const [run, setRun] = useState(0);
   const [playing, setPlaying] = useState(true);
   const [time, setTime] = useState<number | null>(null); // s since the touch; null while they're flying
+  const [total, setTotal] = useState(0); // s since the loader started
+  const [touchAt, setTouchAt] = useState<number | null>(null); // s from the start to the touch
   const [length, setLength] = useState(0);
   const [paused, setPaused] = useState(false);
   const tlRef = useRef<Tl | null>(null);
@@ -29,6 +32,7 @@ export default function LoaderPreview() {
     setRun((n) => n + 1);
     setPlaying(true);
     setTime(null);
+    setTouchAt(null);
     setPaused(false);
   };
 
@@ -41,12 +45,17 @@ export default function LoaderPreview() {
     tlRef.current = null;
     let raf = 0;
     const read = () => {
-      const tl = (window as unknown as Win)[KEY[reveal]] ?? null;
+      const win = window as unknown as Win;
+      const tl = win[KEY[reveal]] ?? null;
       tlRef.current = tl;
+      const start = win.__loaderStart, touch = win.__loaderTouch;
       if (tl) {
         setTime(tl.time());
         setLength(tl.duration());
         setPaused(tl.paused());
+        if (start !== undefined && touch !== undefined) setTouchAt((touch - start) / 1000);
+      } else if (start !== undefined) {
+        setTotal((performance.now() - start) / 1000);
       }
       raf = requestAnimationFrame(read);
     };
@@ -87,8 +96,8 @@ export default function LoaderPreview() {
           <button type="button" onClick={togglePause} disabled={time === null} className="w-16 rounded-full bg-white/15 px-2 py-1 font-semibold disabled:opacity-40">
             {paused ? "▶ Play" : "❚❚ Pause"}
           </button>
-          <span className="w-[150px] font-mono text-[15px] tabular-nums">
-            {time === null ? (playing ? "flying in…" : "done") : `${time.toFixed(2)} s / ${length.toFixed(1)} s`}
+          <span className="w-[220px] font-mono text-[15px] tabular-nums">
+            {time === null ? `${total.toFixed(2)} s · flying in` : `${((touchAt ?? 0) + time).toFixed(2)} s · touch +${time.toFixed(2)}`}
           </span>
           <input
             type="range"
