@@ -60,7 +60,7 @@ export default function MughalFrame() {
   // --- corner plant panels (top-left, and mirrored top-right), inside the
   // frame's lines
   const inset = t + GOLD_LINE + BLACK_LINE;
-  const ps = Math.min(1, Math.max(150, w * 0.27) / PLANT.w); // plant scale
+  const ps = 0.7 * Math.min(1, Math.max(150, w * 0.27) / PLANT.w); // plant scale (70% of the earlier size)
   const pw = PLANT.w * ps, ph = PLANT.h * ps;
 
   const corner = (left: number, top: number, flip: string) => (
