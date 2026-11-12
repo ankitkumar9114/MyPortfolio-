@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { PLANT } from "./cornerPlantEdge";
 import { MANDALA_EDGE, MANDALA_TIPS } from "./mandalaEdge";
 
@@ -30,28 +30,20 @@ const GOLD_LINE = 2; // px, the inner gold line
 const TOUCH = 0.5; // px each fingertip stops short of the centre at 100% (they touch)
 const BLACK_LINE = GOLD_LINE; // px, the black line inside the gold one (same thickness)
 
-// `progress` (0-100) drives the percentage; without it (the preview page)
-// the number counts up on its own so the corner can be seen working.
+// `progress` (0-100) drives the percentage and the figures' flight; without
+// it (the preview page) it counts up on its own so it can be seen working.
 export default function MughalFrame({ progress }: { progress?: number }) {
   const [size, setSize] = useState({ w: 1440, h: 900 });
-  const [demo, setDemo] = useState(0);
+  // the flying figures and the number are moved straight in the DOM, every
+  // frame, from a smoothed progress value (no React re-render per frame)
+  const ankitRef = useRef<HTMLImageElement>(null);
+  const claudeRef = useRef<HTMLImageElement>(null);
+  const numRef = useRef<HTMLSpanElement>(null);
+  const statusRef = useRef<HTMLDivElement>(null);
+  const targetRef = useRef(progress);
   useEffect(() => {
-    if (progress !== undefined) return;
-    // preview only: 0 -> 100 over ~4s (easing out), hold, then again
-    let raf = 0, start = performance.now();
-    const tick = (now: number) => {
-      const t = (now - start) / 4000;
-      if (t > 1.6) start = now;
-      setDemo(Math.min(100, Math.floor(100 * (1 - Math.pow(1 - Math.min(1, t), 2)))));
-      raf = requestAnimationFrame(tick);
-    };
-    raf = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(raf);
+    targetRef.current = progress;
   }, [progress]);
-  const pct = Math.round(progress ?? demo);
-  // how far the figures have flown towards each other: 0 at the start,
-  // 1 (fingertips touching in the centre) at 100%
-  const reach = Math.min(100, Math.max(0, progress ?? demo)) / 100;
   useEffect(() => {
     const fit = () => setSize({ w: window.innerWidth, h: window.innerHeight });
     fit();
@@ -133,8 +125,10 @@ export default function MughalFrame({ progress }: { progress?: number }) {
     />
   );
   // Each figure sits where Figma puts it, then turns about its shoulder so
-  // the pointing finger always aims at the centre of the screen.
-  const figure = (src: string, f: typeof ankit) => {
+  // the pointing finger always aims at the centre of the screen. As loading
+  // goes 0 -> 100% it glides along its own arm towards the centre, so at
+  // 100% the two index fingertips touch there.
+  const place = (f: typeof ankit) => {
     const fw = f.w * DS, fh = f.h * DS;
     const left = f.cx - fw / 2, top = f.cy - fh / 2;
     const base = (f.rotate * Math.PI) / 180;
@@ -147,38 +141,80 @@ export default function MughalFrame({ progress }: { progress?: number }) {
     // extra turn so shoulder -> fingertip points at the screen centre
     const delta = Math.atan2(h / 2 - shoulder[1], w / 2 - shoulder[0]) - Math.atan2(ay, ax);
     const angle = ((base + delta) * 180) / Math.PI;
-    // As loading goes 0 -> 100% the figure glides along its own arm towards
-    // the centre, so at 100% the two fingertips touch there (each stops
-    // TOUCH px short of the exact centre).
     // the fingertip on screen: an arm's length from the shoulder, towards the centre
     const arm = Math.hypot(ax, ay), toCentre = Math.hypot(w / 2 - shoulder[0], h / 2 - shoulder[1]) || 1;
     const tipX = shoulder[0] + (arm * (w / 2 - shoulder[0])) / toCentre;
     const tipY = shoulder[1] + (arm * (h / 2 - shoulder[1])) / toCentre;
+    // the full glide (at 100%): fingertip to the centre, stopping TOUCH px short
     const toC = Math.hypot(w / 2 - tipX, h / 2 - tipY);
-    const glide = toC > TOUCH ? (reach * (toC - TOUCH)) / toC : 0;
-    // rotate about the shoulder, move it to where the Figma tilt put it,
-    // then glide towards the centre
-    const tx = shoulder[0] - (left + sx) + (w / 2 - tipX) * glide, ty = shoulder[1] - (top + sy) + (h / 2 - tipY) * glide;
-    return (
-      // eslint-disable-next-line @next/next/no-img-element -- decorative figure
-      <img
-        src={src}
-        alt=""
-        aria-hidden="true"
-        draggable={false}
-        className="pointer-events-none absolute select-none"
-        style={{
-          left: r2(left),
-          top: r2(top),
-          width: r2(fw),
-          height: r2(fh),
-          transformOrigin: `${r2(sx)}px ${r2(sy)}px`,
-          transform: `translate(${r2(tx)}px, ${r2(ty)}px) rotate(${r2(angle)}deg)`,
-          filter: `drop-shadow(${f.shadow})`,
-        }}
-      />
-    );
+    const k = toC > TOUCH ? (toC - TOUCH) / toC : 0;
+    return {
+      left, top, fw, fh, sx, sy, angle,
+      tx: shoulder[0] - (left + sx), ty: shoulder[1] - (top + sy), // rotate about the shoulder, kept where the Figma tilt put it
+      gx: (w / 2 - tipX) * k, gy: (h / 2 - tipY) * k,
+    };
   };
+  type Placed = ReturnType<typeof place>;
+  const transformAt = (g: Placed, reach: number) => `translate(${r2(g.tx + g.gx * reach)}px, ${r2(g.ty + g.gy * reach)}px) rotate(${r2(g.angle)}deg)`;
+  const figure = (src: string, g: Placed, shadow: string, ref: React.RefObject<HTMLImageElement | null>) => (
+    // eslint-disable-next-line @next/next/no-img-element -- decorative figure
+    <img
+      ref={ref}
+      src={src}
+      alt=""
+      aria-hidden="true"
+      draggable={false}
+      className="pointer-events-none absolute select-none will-change-transform"
+      style={{
+        left: r2(g.left),
+        top: r2(g.top),
+        width: r2(g.fw),
+        height: r2(g.fh),
+        transformOrigin: `${r2(g.sx)}px ${r2(g.sy)}px`,
+        transform: transformAt(g, 0),
+        filter: `drop-shadow(${shadow})`,
+      }}
+    />
+  );
+
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- place() depends only on w and h
+  const placed = useMemo(() => ({ ankit: place(ankit), claude: place(claude) }), [w, h]);
+
+  // The animation: one loop moves both figures and the number. The shown
+  // value eases towards the target (real progress, or the preview's own
+  // count), so jumps in real progress never make the figures jerk.
+  useEffect(() => {
+    let raf = 0, last = performance.now(), shown = 0;
+    const start = performance.now();
+    const tick = (now: number) => {
+      const dt = Math.min(0.1, (now - last) / 1000);
+      last = now;
+      let target = targetRef.current;
+      if (target === undefined) {
+        // preview: 0 -> 100 over 4.5s (smooth in and out), hold 1.5s, again
+        const t = ((now - start) / 1000) % 6;
+        const u = Math.min(1, t / 4.5);
+        target = 100 * (0.5 - Math.cos(Math.PI * u) / 2);
+        shown = target; // already smooth
+      } else {
+        target = Math.min(100, Math.max(0, target));
+        shown += (target - shown) * Math.min(1, dt * 5);
+        if (Math.abs(target - shown) < 0.02) shown = target;
+      }
+      const reach = shown / 100;
+      if (ankitRef.current) ankitRef.current.style.transform = transformAt(placed.ankit, reach);
+      if (claudeRef.current) claudeRef.current.style.transform = transformAt(placed.claude, reach);
+      const n = String(Math.floor(shown + 1e-6));
+      if (numRef.current && numRef.current.textContent !== n) {
+        numRef.current.textContent = n;
+        statusRef.current?.setAttribute("aria-label", `Loading ${n}%`);
+      }
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- transformAt only reads r2
+  }, [placed]);
 
   const corner = (left: number, top: number, flip: string) => (
     // eslint-disable-next-line @next/next/no-img-element -- decorative SVG
@@ -250,7 +286,7 @@ export default function MughalFrame({ progress }: { progress?: number }) {
       {corner(w - cw, h - ch, "scale(-1, -1)")}
       {/* "LOADING" and the percentage in the bottom-right corner, inside the
           frame - same type as the current loader (Preloader.tsx) */}
-      <div className="absolute grid text-white" style={{ left: r2(w - inset - 28), top: r2(h - inset - 22), transform: "translate(-100%, -100%)" }} role="status" aria-label={`Loading ${pct}%`}>
+      <div className="absolute grid text-white" style={{ left: r2(w - inset - 28), top: r2(h - inset - 22), transform: "translate(-100%, -100%)" }} ref={statusRef} role="status" aria-label="Loading 0%">
         {/* the letters of LOADING spread to span exactly the width of "100%",
             centred over the number */}
         <span aria-hidden="true" className="flex justify-between font-[family-name:var(--font-manrope)] text-[12px] font-bold uppercase leading-none desktop:text-[14px]">
@@ -260,17 +296,18 @@ export default function MughalFrame({ progress }: { progress?: number }) {
         </span>
         <span aria-hidden="true" className="mt-[6px] grid font-[family-name:var(--font-arvo)] font-bold leading-none tabular-nums" style={{ fontSize: "clamp(40px, 5vw, 72px)" }}>
           {/* an invisible "100%" sets the width; the live number sits centred on it */}
-          {[100, pct].map((n, i) => (
-            <span key={i} className={`col-start-1 row-start-1 text-center ${i === 0 ? "invisible" : ""}`}>
-              {n}
-              <span className="ml-[2px] align-top text-[0.4em]">%</span>
-            </span>
-          ))}
+          <span className="invisible col-start-1 row-start-1 text-center">
+            100<span className="ml-[2px] align-top text-[0.4em]">%</span>
+          </span>
+          <span className="col-start-1 row-start-1 text-center">
+            <span ref={numRef}>0</span>
+            <span className="ml-[2px] align-top text-[0.4em]">%</span>
+          </span>
         </span>
       </div>
       {/* flying Ankit and flying Claude, over the frame */}
-      {figure("/images/flying-ankit.webp", ankit)}
-      {figure("/images/flying-claude.webp", claude)}
+      {figure("/images/flying-ankit.webp", placed.ankit, ankit.shadow, ankitRef)}
+      {figure("/images/flying-claude.webp", placed.claude, claude.shadow, claudeRef)}
     </div>
   );
 }
