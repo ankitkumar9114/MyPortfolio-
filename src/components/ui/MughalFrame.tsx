@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { PLANT } from "./cornerPlantEdge";
 import { MANDALA_EDGE, MANDALA_TIPS } from "./mandalaEdge";
+import { createWaterSurface, EDGE_WOBBLE, REFRACT_PX, waterEdge, type WaterSurface } from "./waterSurface";
 
 // Frame for the new loader (border only, for now): the teal textured
 // background (loader-bg-teal.webp) inside a border made of two SVGs from
@@ -29,46 +30,29 @@ const GOLD = "#F6A225"; // the ornaments' gold
 const GOLD_LINE = 2; // px, the inner gold line
 const TOUCH = 0.5; // px each fingertip stops short of the centre at 100% (they touch)
 const BLACK_LINE = GOLD_LINE;
-// the energy fire and the burning reveal
+// the water and the reveal (the surface is drawn by waterSurface.ts, three.js)
 const FLIGHT_MIN_S = 2.6; // the figures never fly in faster than this (0 -> 100%)
-const FIRE = ["255, 251, 228", "255, 222, 110", "255, 168, 40", "236, 92, 18", "160, 34, 8"]; // flame colours, hottest first
-const FILL_MS = 1400; // ms for the fire to cover the page
-const REVEAL_AT = 1000; // ms after the touch when the burn-away starts
-const REVEAL_MS = 1700; // ms for the burnt opening to reach the corners
-type Flame = { x: number; y: number; vx: number; vy: number; size: number; life: number; age: number };
-
-// a soft round glow in one colour, drawn once and stamped for every flame
-function glowSprite(rgb: string) {
-  const c = document.createElement("canvas");
-  c.width = c.height = 64;
-  const g = c.getContext("2d");
-  if (g) {
-    const gr = g.createRadialGradient(32, 32, 0, 32, 32, 32);
-    gr.addColorStop(0, `rgba(${rgb}, 1)`);
-    gr.addColorStop(0.35, `rgba(${rgb}, 0.6)`);
-    gr.addColorStop(1, `rgba(${rgb}, 0)`);
-    g.fillStyle = gr;
-    g.fillRect(0, 0, 64, 64);
-  }
-  return c;
-}
-// a flickering, ragged edge: how far (as a fraction) the edge sticks out at
-// angle a, time t
-const ragged = (a: number, t: number) =>
-  0.5 * Math.sin(6 * a + t * 3.1) + 0.3 * Math.sin(11 * a - t * 4.7 + 1.3) + 0.2 * Math.sin(23 * a + t * 8.3 + 2.1);
+const FILL_MS = 1300; // ms for the water to spread over the page
+const REVEAL_AT = 1000; // ms after the touch when the site starts to show
+const REVEAL_MS = 1900; // ms for the opening to reach the corners
 
 // `progress` (0-100, real loading progress from MughalLoader) drives the
 // percentage and the figures' flight.
 //
-// At 100% the fingertips touch and golden energy fire bursts out from the
-// touch and spreads over the whole page; a second in, the loader starts
-// burning away from the centre outwards (a ragged, glowing edge), showing
-// the site underneath. `onReveal` fires as the burn starts, `onDone` once
-// the loader is gone.
+// At 100% the fingertips touch and water spreads out from the touch over
+// the whole page: translucent grey, rippling, catching the light, with the
+// loader underneath refracted through it (water's refractive index), so it
+// sways as the water moves. A second in, the water opens from the centre
+// outwards (a wobbling edge) and the site shows through. `onReveal` fires
+// as the opening starts, `onDone` once the loader is gone.
 export default function MughalFrame({ progress = 0, onReveal, onDone }: { progress?: number; onReveal?: () => void; onDone?: () => void }) {
   const [size, setSize] = useState({ w: 1440, h: 900 });
   const rootRef = useRef<HTMLDivElement>(null);
-  const fireRef = useRef<HTMLCanvasElement>(null);
+  const waterRef = useRef<HTMLCanvasElement>(null);
+  const turbRef = useRef<SVGFETurbulenceElement>(null);
+  const dispRef = useRef<SVGFEDisplacementMapElement>(null);
+  const turb2Ref = useRef<SVGFETurbulenceElement>(null);
+  const mixRef = useRef<SVGFECompositeElement>(null);
   const cbRef = useRef({ onReveal, onDone });
   useEffect(() => {
     cbRef.current = { onReveal, onDone };
@@ -219,128 +203,38 @@ export default function MughalFrame({ progress = 0, onReveal, onDone }: { progre
   // eslint-disable-next-line react-hooks/exhaustive-deps -- place() depends only on w and h
   const placed = useMemo(() => ({ ankit: place(ankit), claude: place(claude) }), [w, h]);
 
-  // The animation: one loop moves both figures and the number, then plays
-  // the energy fire and the burn-away. The shown value eases towards the
-  // real progress (never faster than FLIGHT_MIN_S for the whole flight), so
-  // jumps in loading never make the figures jerk.
+  // The water shader (three.js, loaded in the background as the loader
+  // starts, so it's ready by the touch)
+  const water = useRef<WaterSurface | null>(null);
   useEffect(() => {
-    const root = rootRef.current, canvas = fireRef.current;
-    const ctx = canvas?.getContext("2d") ?? null;
-    if (canvas) {
-      canvas.width = w;
-      canvas.height = h;
-    }
-    const cx = w / 2, cy = h / 2;
+    let alive = true;
+    import("three").then((THREE) => {
+      const canvas = waterRef.current;
+      if (!alive || !canvas) return;
+      water.current = createWaterSurface(THREE, canvas, window.innerWidth, window.innerHeight);
+      water.current?.render({ time: 0, front: 0, hole: 0, wobble: 0 }); // compiles the shader now, not at the touch
+    });
+    return () => {
+      alive = false;
+      water.current?.dispose();
+      water.current = null;
+    };
+  }, []);
+  useEffect(() => {
+    water.current?.resize(w, h);
+  }, [w, h]);
+
+  // The animation: one loop moves both figures and the number, then plays
+  // the water and the reveal. The shown value eases towards the real
+  // progress (never faster than FLIGHT_MIN_S for the whole flight), so jumps
+  // in loading never make the figures jerk.
+  useEffect(() => {
+    const root = rootRef.current;
+    const turb = turbRef.current, disp = dispRef.current;
     const far = Math.hypot(w, h) / 2; // centre to the corners
-    const S = far / 900; // flame sizes and speeds are tuned for a laptop screen
-    const sprites = FIRE.map(glowSprite);
+    const S = far / 900; // tuned for a laptop screen
+    const wob = EDGE_WOBBLE * S;
     let raf = 0, last = performance.now(), shown = 0, touchAt = 0, revealed = false, finished = false;
-    let flames: Flame[] = [];
-
-    // a closed ragged circle of radius R as path points
-    const edge = (R: number, rough: number, t: number) => {
-      const pts: [number, number][] = [];
-      for (let i = 0; i < 120; i++) {
-        const a = (i / 120) * Math.PI * 2;
-        const r = Math.max(0, R + rough * ragged(a, t));
-        pts.push([cx + Math.cos(a) * r, cy + Math.sin(a) * r]);
-      }
-      return pts;
-    };
-    const trace = (pts: [number, number][]) => {
-      if (!ctx) return;
-      ctx.beginPath();
-      pts.forEach(([x, y], i) => (i ? ctx.lineTo(x, y) : ctx.moveTo(x, y)));
-      ctx.closePath();
-    };
-    const emit = (n: number, rMin: number, rMax: number, speed: number, size: number) => {
-      for (let i = 0; i < n; i++) {
-        const a = Math.random() * Math.PI * 2, r = rMin + Math.random() * (rMax - rMin);
-        const v = speed * (0.4 + Math.random() * 0.9);
-        flames.push({
-          x: cx + Math.cos(a) * r, y: cy + Math.sin(a) * r,
-          vx: Math.cos(a) * v, vy: Math.sin(a) * v - 60 * S, // flames lick upwards too
-          size: size * (0.6 + Math.random() * 0.8),
-          life: 0.45 + Math.random() * 0.6, age: 0,
-        });
-      }
-    };
-
-    const drawFire = (now: number, dt: number) => {
-      if (!ctx) return;
-      const e = (now - touchAt) / 1000, t = now / 1000;
-      ctx.clearRect(0, 0, w, h);
-      // the fire front: a ragged wall of fire racing out from the touch until
-      // it covers the page, white-hot behind, red at its edge
-      const u = Math.min(1, (e * 1000) / FILL_MS);
-      const F = (far * 1.25 + 60 * S) * (1 - Math.pow(1 - u, 3));
-      if (F > 1) {
-        ctx.globalCompositeOperation = "source-over";
-        const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, F);
-        g.addColorStop(0, "rgba(255, 248, 215, 0.97)");
-        g.addColorStop(0.3, "rgba(255, 214, 92, 0.95)");
-        g.addColorStop(0.7, "rgba(250, 146, 32, 0.93)");
-        g.addColorStop(0.9, "rgba(214, 70, 14, 0.9)");
-        g.addColorStop(1, "rgba(150, 32, 8, 0.75)");
-        ctx.fillStyle = g;
-        trace(edge(F, Math.min(F * 0.3, 70 * S), t));
-        ctx.fill();
-      }
-      // the flames: glowing tongues burning outwards, hot white -> yellow ->
-      // orange -> red as they die, flickering in size, added as light
-      if (e < 1.8) emit(Math.round(900 * dt), F * 0.55, F * 1.02, 340 * S, 70 * S);
-      ctx.globalCompositeOperation = "lighter";
-      const drag = Math.exp(-1.2 * dt);
-      flames = flames.filter((f) => (f.age += dt) < f.life);
-      for (const f of flames) {
-        f.vx *= drag;
-        f.vy = f.vy * drag - 90 * S * dt;
-        f.x += f.vx * dt;
-        f.y += f.vy * dt;
-        const k = f.age / f.life;
-        const img = sprites[Math.min(FIRE.length - 1, Math.floor(k * FIRE.length))];
-        const sz = f.size * (1 - k * 0.5) * (0.85 + Math.random() * 0.3);
-        ctx.globalAlpha = (1 - k) * 0.7;
-        ctx.drawImage(img, f.x - sz / 2, f.y - sz / 2, sz, sz);
-      }
-      ctx.globalAlpha = 1;
-      // the flash of the touch itself
-      const fl = Math.max(0, 1 - e / 0.5);
-      if (fl > 0) {
-        const r = (40 + 380 * e) * S;
-        ctx.globalAlpha = fl;
-        ctx.drawImage(sprites[0], cx - r, cy - r, r * 2, r * 2);
-        ctx.globalAlpha = 1;
-      }
-    };
-
-    // the burn-away: the loader is cut along a ragged circle that grows from
-    // the centre (so the site shows inside it), and that edge glows like
-    // burning paper, throwing embers
-    const burn = (now: number) => {
-      const e = now - touchAt - REVEAL_AT;
-      const u = Math.min(1, e / REVEAL_MS);
-      const rough = 34 * S;
-      const H = (far + rough * 2 + 20) * (u * u * (3 - 2 * u));
-      const pts = edge(H, Math.min(H * 0.35, rough), now / 1000);
-      if (root) root.style.clipPath = `path(evenodd, "M0 0H${w}V${h}H0Z M${pts.map(([x, y]) => `${r2(x)} ${r2(y)}`).join("L")}Z")`;
-      if (ctx && H > 2) {
-        ctx.globalCompositeOperation = "lighter";
-        ctx.shadowColor = "rgba(255, 120, 20, 1)";
-        ctx.shadowBlur = 28 * S;
-        ctx.strokeStyle = "rgba(255, 150, 40, 0.95)";
-        ctx.lineWidth = 16 * S;
-        trace(pts);
-        ctx.stroke();
-        ctx.shadowBlur = 0;
-        ctx.strokeStyle = "rgba(255, 245, 200, 0.9)";
-        ctx.lineWidth = 4 * S;
-        ctx.stroke();
-        // embers flying off the burning edge
-        if (u < 1) emit(14, H, H + rough, 120 * S, 26 * S);
-      }
-      return u >= 1;
-    };
 
     const tick = (now: number) => {
       const dt = Math.min(0.05, (now - last) / 1000);
@@ -358,22 +252,49 @@ export default function MughalFrame({ progress = 0, onReveal, onDone }: { progre
           statusRef.current?.setAttribute("aria-label", `Loading ${n}%`);
         }
         if (shown >= 100) {
-          // the touch
+          // the touch: the loader goes under the water
           touchAt = now;
-          emit(160, 0, 20 * S, 700 * S, 90 * S);
+          // ripple size follows the screen size (set once, then left alone)
+          const f = `${r2(0.0055 / S * 1000) / 1000} ${r2(0.008 / S * 1000) / 1000}`;
+          turb?.setAttribute("baseFrequency", f);
+          turb2Ref.current?.setAttribute("baseFrequency", f);
+          if (root) root.style.filter = "url(#mughal-water)";
         }
       } else if (!finished) {
-        drawFire(now, dt);
-        if (now - touchAt >= REVEAL_AT) {
+        const e = now - touchAt, t = e / 1000;
+        // the water spreads out from the touch until it covers the page
+        const u = Math.min(1, e / FILL_MS);
+        const front = (far + 80 * S) * (1 - Math.pow(1 - u, 3));
+        // the loader underneath sways with the water: the refraction grows
+        // as the water covers it, and the ripples drift
+        const wa = 0.5 + 0.5 * Math.cos(t * 2.2);
+        mixRef.current?.setAttribute("k2", String(r2(wa)));
+        mixRef.current?.setAttribute("k3", String(r2(1 - wa)));
+        disp?.setAttribute("scale", String(r2(REFRACT_PX * S * u * (0.85 + 0.15 * Math.sin(t * 3.1)))));
+        // from REVEAL_AT, the water opens from the centre to show the site:
+        // the loader is cut along the same wobbling edge the shader draws
+        let hole = 0, wobble = 0;
+        if (e >= REVEAL_AT) {
           if (!revealed) {
             revealed = true;
             cbRef.current.onReveal?.();
           }
-          if (burn(now)) {
-            finished = true;
-            cbRef.current.onDone?.();
+          const v = Math.min(1, (e - REVEAL_AT) / REVEAL_MS);
+          hole = (far + wob + 10) * (v * v * (3 - 2 * v));
+          // a small opening is nearly round; the wobble grows as it opens
+          wobble = wob * Math.min(1, hole / (220 * S));
+          if (root) {
+            const cx = w / 2, cy = h / 2, pts: string[] = [];
+            for (let i = 0; i < 144; i++) {
+              const a = (i / 144) * Math.PI * 2, r = Math.max(0, hole + wobble * waterEdge(a, t));
+              pts.push(`${r2(cx + Math.cos(a) * r)} ${r2(cy + Math.sin(a) * r)}`);
+            }
+            root.style.clipPath = `path(evenodd, "M0 0H${w}V${h}H0Z M${pts.join("L")}Z")`;
           }
+          if (v >= 1) finished = true;
         }
+        water.current?.render({ time: t, front, hole, wobble });
+        if (finished) cbRef.current.onDone?.();
       }
       if (!finished) raf = requestAnimationFrame(tick);
     };
@@ -395,7 +316,8 @@ export default function MughalFrame({ progress = 0, onReveal, onDone }: { progre
     />
   );
   return (
-    <div ref={rootRef} className="fixed inset-0 z-[1000] overflow-hidden" style={{ background: "#002F2A url('/images/loader-bg-teal.webp') center / cover" }}>
+    <>
+      <div ref={rootRef} className="fixed inset-0 z-[1000] overflow-hidden" style={{ background: "#002F2A url('/images/loader-bg-teal.webp') center / cover" }}>
       {/* corner plant panels */}
       {/* eslint-disable-next-line @next/next/no-img-element -- decorative */}
       <img src="/images/corner-plant.webp" alt="" aria-hidden="true" draggable={false} className="pointer-events-none absolute select-none" style={{ left: inset, top: inset, width: pw, height: ph }} />
@@ -405,9 +327,9 @@ export default function MughalFrame({ progress = 0, onReveal, onDone }: { progre
       {pieces.map(pieceImg)}
       {/* the gold mandala (raw-images/mandala-lines.svg, lines in the reference painting's muted ochre) in the centre, behind the figures' hands */}
       {/* eslint-disable-next-line @next/next/no-img-element -- decorative SVG */}
-      <img src={`${P}mandala.svg`} alt="" aria-hidden="true" draggable={false} className="pointer-events-none absolute select-none" style={{ ...mandala, opacity: 0.3 }} />
+      <img src={`${P}mandala.svg`} alt="" aria-hidden="true" draggable={false} className="mandala-spin pointer-events-none absolute select-none" style={{ ...mandala, opacity: 0.3 }} />
       {/* a dotted line hugging the mandala's own edge, a little outside it, same ochre and opacity */}
-      <svg aria-hidden="true" className="pointer-events-none absolute overflow-visible" viewBox="0 0 1 1" preserveAspectRatio="none" style={{ ...mandala, opacity: 0.3 }}>
+      <svg aria-hidden="true" className="mandala-spin pointer-events-none absolute overflow-visible" viewBox="0 0 1 1" preserveAspectRatio="none" style={{ ...mandala, opacity: 0.3 }}>
         <path d={MANDALA_EDGE} fill="none" stroke="#B9823A" strokeWidth={0.009} strokeLinecap="round" strokeDasharray="0.0001 0.021" />
         {MANDALA_TIPS.map(([x, y]) => (
           <circle key={`${x},${y}`} cx={x} cy={y} r={0.008} fill="#B9823A" />
@@ -474,9 +396,23 @@ export default function MughalFrame({ progress = 0, onReveal, onDone }: { progre
       {/* flying Ankit and flying Claude, over the frame */}
       {figure("/images/flying-ankit.webp", placed.ankit, ankit.shadow, ankitRef)}
       {figure("/images/flying-claude.webp", placed.claude, claude.shadow, claudeRef)}
-      {/* the energy fire from the touch, and the burning edge of the reveal */}
-      <canvas ref={fireRef} aria-hidden="true" className="pointer-events-none absolute inset-0" style={{ width: w, height: h }} />
-    </div>
+      </div>
+      {/* the refraction of the loader under the water (switched on at the
+          touch): moving noise shifts what's underneath, by up to REFRACT_PX */}
+      <svg aria-hidden="true" width="0" height="0" className="absolute">
+        <filter id="mughal-water" x="0" y="0" width="100%" height="100%" colorInterpolationFilters="sRGB">
+          {/* two still ripple patterns, blended into each other over time (so
+              the water moves without the noise being redrawn every frame) */}
+          <feTurbulence ref={turbRef} type="fractalNoise" baseFrequency="0.0055 0.008" numOctaves={2} seed={7} result="a" />
+          <feTurbulence ref={turb2Ref} type="fractalNoise" baseFrequency="0.0055 0.008" numOctaves={2} seed={23} result="b" />
+          <feComposite ref={mixRef} in="a" in2="b" operator="arithmetic" k1="0" k2="0.5" k3="0.5" k4="0" result="ripples" />
+          <feDisplacementMap ref={dispRef} in="SourceGraphic" in2="ripples" scale="0" xChannelSelector="R" yChannelSelector="G" />
+        </filter>
+      </svg>
+      {/* the water's surface (waterSurface.ts): over the loader, and outside
+          it so the loader's cut doesn't cut the water's edge too */}
+      <canvas ref={waterRef} aria-hidden="true" className="pointer-events-none fixed inset-0 z-[1001] h-full w-full" />
+    </>
   );
 }
 

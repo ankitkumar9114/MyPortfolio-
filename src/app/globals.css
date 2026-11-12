@@ -454,3 +454,16 @@ body {
     print-color-adjust: exact;
   }
 }
+
+/* Loader: the mandala (and its dotted outline) turning slowly about its
+   centre - both are centred on the screen, so they turn together. */
+@keyframes mandala-spin {
+  to { transform: rotate(360deg); }
+}
+.mandala-spin {
+  transform-origin: 50% 50%;
+  animation: mandala-spin 60s linear infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .mandala-spin { animation: none; }
+}
