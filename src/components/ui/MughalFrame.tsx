@@ -98,7 +98,7 @@ export default function MughalFrame() {
   // the mandala, centred, its height 64% of the screen's shorter side
   const mh = Math.min(w, h) * 0.64, mw = (mh * MANDALA.w) / MANDALA.h;
   const mandala = { left: r2(w / 2 - mw / 2), top: r2(h / 2 - mh / 2), width: r2(mw), height: r2(mh) };
-  const ball = Math.max(18, Math.min(w, h) * 0.034); // the energy ball's size
+  const ball = Math.max(12, Math.min(w, h) * 0.022); // the energy ball's size
   const pieceImg = (p: Piece, i: number) => (
     // eslint-disable-next-line @next/next/no-img-element -- decorative
     <img
@@ -175,7 +175,7 @@ export default function MughalFrame() {
       <img src={`${P}mandala.svg`} alt="" aria-hidden="true" draggable={false} className="pointer-events-none absolute select-none" style={{ ...mandala, opacity: 0.3 }} />
       {/* the energy ball in the centre: a soft breathing glow, and a small
           glowing sphere whose edge keeps wobbling (globals.css) */}
-      <div aria-hidden="true" className="energy-glow pointer-events-none absolute rounded-full" style={{ left: r2(w / 2 - ball * 2.5), top: r2(h / 2 - ball * 2.5), width: r2(ball * 5), height: r2(ball * 5) }} />
+      <div aria-hidden="true" className="energy-glow pointer-events-none absolute rounded-full" style={{ left: r2(w / 2 - ball * 1.6), top: r2(h / 2 - ball * 1.6), width: r2(ball * 3.2), height: r2(ball * 3.2) }} />
       <div aria-hidden="true" className="energy-ball pointer-events-none absolute" style={{ left: r2(w / 2 - ball / 2), top: r2(h / 2 - ball / 2), width: r2(ball), height: r2(ball) }} />
       <svg width={w} height={h} viewBox={`0 0 ${w} ${h}`} className="absolute inset-0 block" aria-hidden="true">
         {/* the band: a gradient from the outer edge (#710004) to the inner
