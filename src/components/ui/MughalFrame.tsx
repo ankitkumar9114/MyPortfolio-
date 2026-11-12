@@ -2,7 +2,7 @@
 
 import { useEffect, useState, type ReactNode } from "react";
 import { PLANT } from "./cornerPlantEdge";
-import { MANDALA_EDGE } from "./mandalaEdge";
+import { MANDALA_EDGE, MANDALA_TIPS } from "./mandalaEdge";
 
 // Frame for the new loader (border only, for now): the teal textured
 // background (loader-bg-teal.webp) inside a border made of two SVGs from
@@ -177,6 +177,9 @@ export default function MughalFrame() {
       {/* a dotted line hugging the mandala's own edge, a little outside it, same ochre and opacity */}
       <svg aria-hidden="true" className="pointer-events-none absolute overflow-visible" viewBox="0 0 1 1" preserveAspectRatio="none" style={{ ...mandala, opacity: 0.3 }}>
         <path d={MANDALA_EDGE} fill="none" stroke="#B9823A" strokeWidth={0.009} strokeLinecap="round" strokeDasharray="0.0001 0.021" />
+        {MANDALA_TIPS.map(([x, y]) => (
+          <circle key={`${x},${y}`} cx={x} cy={y} r={0.008} fill="#B9823A" />
+        ))}
       </svg>
       {/* the energy ball in the centre: a soft breathing glow, and a small
           glowing sphere whose edge keeps wobbling (globals.css) */}
