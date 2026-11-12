@@ -19,7 +19,8 @@ const BAND = 20; // border thickness on screen (px)
 const OUTER = "#710004"; // band gradient, outer edge
 const INNER = "#A0251E"; // band gradient, inner edge
 const GOLD = "#F6A225"; // the ornaments' gold
-const GOLD_LINE = 4; // px, the inner gold line
+const GOLD_LINE = 2; // px, the inner gold line
+const BLACK_LINE = GOLD_LINE; // px, the black line inside the gold one (same thickness)
 
 export default function MughalFrame() {
   const [size, setSize] = useState({ w: 1440, h: 900 });
@@ -99,6 +100,8 @@ export default function MughalFrame() {
         {/* gold line just outside the band (on the background), touching its
             inner edge all the way round */}
         <rect x={t + GOLD_LINE / 2} y={t + GOLD_LINE / 2} width={w - 2 * t - GOLD_LINE} height={h - 2 * t - GOLD_LINE} fill="none" stroke={GOLD} strokeWidth={GOLD_LINE} />
+        {/* black line just inside the gold one, touching it all the way round */}
+        <rect x={t + GOLD_LINE + BLACK_LINE / 2} y={t + GOLD_LINE + BLACK_LINE / 2} width={w - 2 * (t + GOLD_LINE) - BLACK_LINE} height={h - 2 * (t + GOLD_LINE) - BLACK_LINE} fill="none" stroke="#000000" strokeWidth={BLACK_LINE} />
       </svg>
       {corner(0, 0, "none")}
       {corner(w - cw, 0, "scaleX(-1)")}
