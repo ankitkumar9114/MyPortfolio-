@@ -454,3 +454,33 @@ body {
     print-color-adjust: exact;
   }
 }
+
+/* Loader: the energy ball between the two hands - a small glowing sphere
+   whose edge keeps wobbling (border-radius morph), slowly turning, with a
+   breathing glow. */
+@keyframes energy-morph {
+  0%, 100% { border-radius: 52% 48% 55% 45% / 47% 54% 46% 53%; }
+  25% { border-radius: 45% 55% 48% 52% / 55% 45% 53% 47%; }
+  50% { border-radius: 55% 45% 44% 56% / 48% 56% 44% 52%; }
+  75% { border-radius: 47% 53% 56% 44% / 53% 47% 55% 45%; }
+}
+@keyframes energy-turn {
+  to { transform: rotate(360deg); }
+}
+@keyframes energy-breathe {
+  0%, 100% { transform: scale(1); opacity: 0.85; }
+  50% { transform: scale(1.18); opacity: 1; }
+}
+.energy-ball {
+  background: radial-gradient(circle at 38% 34%, #fffbe6 0%, #ffe08a 22%, #ffb238 52%, #e8761a 78%, #b8460a 100%);
+  box-shadow: 0 0 10px 3px rgba(255, 196, 92, 0.85), 0 0 26px 10px rgba(255, 150, 40, 0.45), inset 0 0 6px rgba(255, 255, 230, 0.7);
+  animation: energy-morph 2.6s ease-in-out infinite, energy-turn 7s linear infinite;
+}
+.energy-glow {
+  background: radial-gradient(circle, rgba(255, 190, 80, 0.55) 0%, rgba(255, 150, 40, 0.22) 40%, rgba(255, 150, 40, 0) 70%);
+  mix-blend-mode: screen; /* stays warm over the teal instead of turning olive */
+  animation: energy-breathe 2.2s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .energy-ball, .energy-glow { animation: none; }
+}
