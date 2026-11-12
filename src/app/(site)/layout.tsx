@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import SmoothScroll from "@/components/providers/SmoothScroll";
-import Preloader from "@/components/ui/Preloader";
+import MughalLoader from "@/components/ui/MughalLoader";
 import Header from "@/components/layout/Header";
 import { getCmsInitial } from "@/lib/cmsServer";
 import { CmsInitialProvider } from "@/lib/cmsInitial";
@@ -16,7 +16,7 @@ export default async function SiteLayout({ children }: { children: ReactNode }) 
   const cms = await getCmsInitial();
   return (
     <CmsInitialProvider value={cms}>
-      <Preloader />
+      <MughalLoader />
       <Header />
       <SmoothScroll>{children}</SmoothScroll>
     </CmsInitialProvider>

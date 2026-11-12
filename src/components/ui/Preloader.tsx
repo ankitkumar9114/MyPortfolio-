@@ -5,6 +5,7 @@ import { gsap, isReducedMotion } from "@/lib/gsap";
 import { markPreloaderComplete } from "@/lib/preloaderSignal";
 import { FRAME_OUTLINES } from "./preloaderFrames";
 import { bootWaves } from "./preloaderBoot";
+import { collectImageUrls, prepareImage } from "./loaderAssets";
 
 // Below this, the preloader stays up for at least this long even if every
 // image is already cached — long enough for the "Loading" branding to
@@ -18,61 +19,6 @@ const MAX_WAIT_MS = 8000;
 // Images that mount a moment after the first render are picked up by one
 // more scan this long after the start.
 const RESCAN_MS = 400;
-
-// Loads AND decodes an image, so it's ready to paint the instant it scrolls
-// into view (decoding a big image mid-scroll is what causes jank).
-function prepareImage(src: string): Promise<void> {
-  return new Promise((resolve) => {
-    const img = new Image();
-    img.decoding = "async";
-    img.onload = () => {
-      img.decode().then(resolve, resolve);
-    };
-    img.onerror = () => resolve();
-    img.src = src;
-  });
-}
-
-// Every image the page uses for THIS screen size: <img> elements that are
-// rendered (an element under display:none reports no client rects, so the
-// other breakpoints' variants are skipped), plus CSS background images.
-// Lazy <img>s are switched to eager, so they load now instead of mid-scroll.
-// What the loader waits for: only what the first screens show, i.e. the
-// navigation and page background (outside <main>), the hero and the case
-// studies (the sections of <main> up to and including #work). Everything
-// further down (impact cards, TV, LinkedIn posts, shelf, footer) loads as the
-// visitor scrolls towards it (lazy images, posts loaded when near).
-function isPriority(el: Element) {
-  const main = document.querySelector("main");
-  if (!main || !main.contains(el)) return true;
-  const work = document.getElementById("work");
-  for (const section of Array.from(main.children)) {
-    if (section.contains(el)) return true;
-    if (work && section.contains(work)) return false;
-  }
-  return false;
-}
-function collectImageUrls(): string[] {
-  const urls = new Set<string>();
-  for (const img of Array.from(document.images)) {
-    if (img.getClientRects().length === 0 || !isPriority(img)) continue;
-    if (img.loading === "lazy") img.loading = "eager";
-    const src = img.currentSrc || img.src;
-    if (src) urls.add(src);
-  }
-  for (const el of Array.from(document.querySelectorAll<HTMLElement>("body, body *"))) {
-    if (!isPriority(el)) continue;
-    const bg = getComputedStyle(el).backgroundImage;
-    if (!bg || bg === "none") continue;
-    for (const m of bg.matchAll(/url\(["']?([^"')]+)["']?\)/g)) {
-      if (!m[1].startsWith("data:")) urls.add(new URL(m[1], location.href).href);
-    }
-  }
-  // the phone wall texture is drawn by body::before
-  const before = getComputedStyle(document.body, "::before").backgroundImage;
-  for (const m of before.matchAll(/url\(["']?([^"')]+)["']?\)/g)) urls.add(new URL(m[1], location.href).href);
-  return [...urls];
-}
 
 // The backdrop artwork, one per screen shape (from raw-images, as WebP), and
 // the outline of the empty space inside its central frame (FRAME_OUTLINES,
@@ -206,12 +152,7 @@ export default function Preloader() {
   const containerRef = useRef<HTMLDivElement>(null);
   const wavesRef = useRef<HTMLDivElement>(null);
   const overlayRef = useRef<SVGSVGElement>(null);
-  // Skipped under reduced motion - and, in development only, when the page
-  // is opened with ?noloader (the new loader's preview shows the site behind
-  // it in a frame and must not play this loader there).
-  const skip = useRef(
-    isReducedMotion() || (process.env.NODE_ENV !== "production" && typeof window !== "undefined" && new URLSearchParams(window.location.search).has("noloader")),
-  );
+  const skip = useRef(isReducedMotion());
 
   useEffect(() => {
     if (skip.current) {

@@ -29,28 +29,50 @@ const GOLD = "#F6A225"; // the ornaments' gold
 const GOLD_LINE = 2; // px, the inner gold line
 const TOUCH = 0.5; // px each fingertip stops short of the centre at 100% (they touch)
 const BLACK_LINE = GOLD_LINE;
-// the energy burst and the reveal
-const SMOKE = ["255, 214, 90", "246, 178, 58", "255, 233, 160", "243, 154, 30"]; // golden smoke colours (r, g, b)
-const REVEAL_AT = 1000; // ms after the touch when the opening starts
-const REVEAL_MS = 1600; // ms for the opening to reach the corners
-const FEATHER = 160; // px (on a laptop screen): the opening's soft edge
-type Puff = { x: number; y: number; vx: number; vy: number; r: number; grow: number; spin: number; born: number; color: string; alpha: number }; // px, the black line inside the gold one (same thickness)
+// the energy fire and the burning reveal
+const FLIGHT_MIN_S = 2.6; // the figures never fly in faster than this (0 -> 100%)
+const FIRE = ["255, 251, 228", "255, 222, 110", "255, 168, 40", "236, 92, 18", "160, 34, 8"]; // flame colours, hottest first
+const FILL_MS = 1400; // ms for the fire to cover the page
+const REVEAL_AT = 1000; // ms after the touch when the burn-away starts
+const REVEAL_MS = 1700; // ms for the burnt opening to reach the corners
+type Flame = { x: number; y: number; vx: number; vy: number; size: number; life: number; age: number };
 
-// `progress` (0-100) drives the percentage and the figures' flight; without
-// it (the preview page) it counts up on its own so it can be seen working.
+// a soft round glow in one colour, drawn once and stamped for every flame
+function glowSprite(rgb: string) {
+  const c = document.createElement("canvas");
+  c.width = c.height = 64;
+  const g = c.getContext("2d");
+  if (g) {
+    const gr = g.createRadialGradient(32, 32, 0, 32, 32, 32);
+    gr.addColorStop(0, `rgba(${rgb}, 1)`);
+    gr.addColorStop(0.35, `rgba(${rgb}, 0.6)`);
+    gr.addColorStop(1, `rgba(${rgb}, 0)`);
+    g.fillStyle = gr;
+    g.fillRect(0, 0, 64, 64);
+  }
+  return c;
+}
+// a flickering, ragged edge: how far (as a fraction) the edge sticks out at
+// angle a, time t
+const ragged = (a: number, t: number) =>
+  0.5 * Math.sin(6 * a + t * 3.1) + 0.3 * Math.sin(11 * a - t * 4.7 + 1.3) + 0.2 * Math.sin(23 * a + t * 8.3 + 2.1);
+
+// `progress` (0-100, real loading progress from MughalLoader) drives the
+// percentage and the figures' flight.
 //
-// At 100% the fingertips touch and golden energy bursts out from the touch,
-// spreading like smoke until it fills the page; a second in, a hole opens
-// in the centre and grows outwards, taking the loader (smoke and all) away
-// to show the site underneath. `onDone` fires when the loader is gone.
-export default function MughalFrame({ progress, onDone }: { progress?: number; onDone?: () => void }) {
+// At 100% the fingertips touch and golden energy fire bursts out from the
+// touch and spreads over the whole page; a second in, the loader starts
+// burning away from the centre outwards (a ragged, glowing edge), showing
+// the site underneath. `onReveal` fires as the burn starts, `onDone` once
+// the loader is gone.
+export default function MughalFrame({ progress = 0, onReveal, onDone }: { progress?: number; onReveal?: () => void; onDone?: () => void }) {
   const [size, setSize] = useState({ w: 1440, h: 900 });
   const rootRef = useRef<HTMLDivElement>(null);
-  const smokeRef = useRef<HTMLCanvasElement>(null);
-  const onDoneRef = useRef(onDone);
+  const fireRef = useRef<HTMLCanvasElement>(null);
+  const cbRef = useRef({ onReveal, onDone });
   useEffect(() => {
-    onDoneRef.current = onDone;
-  }, [onDone]);
+    cbRef.current = { onReveal, onDone };
+  }, [onReveal, onDone]);
   // the flying figures and the number are moved straight in the DOM, every
   // frame, from a smoothed progress value (no React re-render per frame)
   const ankitRef = useRef<HTMLImageElement>(null);
@@ -198,11 +220,11 @@ export default function MughalFrame({ progress, onDone }: { progress?: number; o
   const placed = useMemo(() => ({ ankit: place(ankit), claude: place(claude) }), [w, h]);
 
   // The animation: one loop moves both figures and the number, then plays
-  // the energy burst and the reveal. The shown value eases towards the
-  // target (real progress, or the preview's own count), so jumps in real
-  // progress never make the figures jerk.
+  // the energy fire and the burn-away. The shown value eases towards the
+  // real progress (never faster than FLIGHT_MIN_S for the whole flight), so
+  // jumps in loading never make the figures jerk.
   useEffect(() => {
-    const root = rootRef.current, canvas = smokeRef.current;
+    const root = rootRef.current, canvas = fireRef.current;
     const ctx = canvas?.getContext("2d") ?? null;
     if (canvas) {
       canvas.width = w;
@@ -210,106 +232,123 @@ export default function MughalFrame({ progress, onDone }: { progress?: number; o
     }
     const cx = w / 2, cy = h / 2;
     const far = Math.hypot(w, h) / 2; // centre to the corners
-    const scale = far / 900; // smoke sizes/speeds are tuned for a laptop screen
-    let raf = 0, last = performance.now(), shown = 0, start = performance.now();
-    let touchAt = 0, finished = false, puffs: Puff[] = [], spawnUntil = 0;
+    const S = far / 900; // flame sizes and speeds are tuned for a laptop screen
+    const sprites = FIRE.map(glowSprite);
+    let raf = 0, last = performance.now(), shown = 0, touchAt = 0, revealed = false, finished = false;
+    let flames: Flame[] = [];
 
-    const setHole = (r: number) => {
-      if (!root) return;
-      // the opening: clear inside r, the loader beyond it, with a soft edge
-      const m = r <= 0 ? "" : `radial-gradient(circle at 50% 50%, transparent ${r2(r)}px, #000 ${r2(r + FEATHER * scale)}px)`;
-      root.style.maskImage = m;
-      root.style.setProperty("-webkit-mask-image", m);
+    // a closed ragged circle of radius R as path points
+    const edge = (R: number, rough: number, t: number) => {
+      const pts: [number, number][] = [];
+      for (let i = 0; i < 120; i++) {
+        const a = (i / 120) * Math.PI * 2;
+        const r = Math.max(0, R + rough * ragged(a, t));
+        pts.push([cx + Math.cos(a) * r, cy + Math.sin(a) * r]);
+      }
+      return pts;
     };
-    const reset = () => {
-      touchAt = 0;
-      finished = false;
-      puffs = [];
-      setHole(0);
-      if (root) root.style.visibility = "";
-      ctx?.clearRect(0, 0, w, h);
+    const trace = (pts: [number, number][]) => {
+      if (!ctx) return;
+      ctx.beginPath();
+      pts.forEach(([x, y], i) => (i ? ctx.lineTo(x, y) : ctx.moveTo(x, y)));
+      ctx.closePath();
     };
-    reset();
-
-    const spawn = (n: number, now: number) => {
+    const emit = (n: number, rMin: number, rMax: number, speed: number, size: number) => {
       for (let i = 0; i < n; i++) {
-        const a = Math.random() * Math.PI * 2;
-        const v = (260 + Math.random() * 760) * scale;
-        puffs.push({
-          x: cx + Math.cos(a) * 6, y: cy + Math.sin(a) * 6,
-          vx: Math.cos(a) * v, vy: Math.sin(a) * v,
-          r: (14 + Math.random() * 30) * scale,
-          grow: (140 + Math.random() * 260) * scale,
-          spin: (Math.random() - 0.5) * 1.6, // curl of the smoke
-          born: now,
-          color: SMOKE[(Math.random() * SMOKE.length) | 0],
-          alpha: 0.28 + Math.random() * 0.3,
+        const a = Math.random() * Math.PI * 2, r = rMin + Math.random() * (rMax - rMin);
+        const v = speed * (0.4 + Math.random() * 0.9);
+        flames.push({
+          x: cx + Math.cos(a) * r, y: cy + Math.sin(a) * r,
+          vx: Math.cos(a) * v, vy: Math.sin(a) * v - 60 * S, // flames lick upwards too
+          size: size * (0.6 + Math.random() * 0.8),
+          life: 0.45 + Math.random() * 0.6, age: 0,
         });
       }
     };
 
-    const drawSmoke = (now: number, dt: number) => {
+    const drawFire = (now: number, dt: number) => {
       if (!ctx) return;
+      const e = (now - touchAt) / 1000, t = now / 1000;
       ctx.clearRect(0, 0, w, h);
-      const e = (now - touchAt) / 1000;
-      // a warm wash under the puffs, so the page ends up fully covered
-      const wash = far * 1.15 * (1 - Math.pow(1 - Math.min(1, e / 1.5), 3));
-      const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, Math.max(1, wash));
-      g.addColorStop(0, "rgba(255, 236, 170, 0.95)");
-      g.addColorStop(0.55, "rgba(255, 196, 80, 0.8)");
-      g.addColorStop(0.85, "rgba(246, 162, 37, 0.45)");
-      g.addColorStop(1, "rgba(246, 162, 37, 0)");
-      ctx.fillStyle = g;
-      ctx.fillRect(0, 0, w, h);
-      // the smoke: soft puffs drifting out, slowing, curling and swelling
-      for (const p of puffs) {
-        const drag = Math.exp(-1.6 * dt);
-        const vx = p.vx, vy = p.vy;
-        p.vx = (vx - vy * p.spin * dt) * drag;
-        p.vy = (vy + vx * p.spin * dt) * drag;
-        p.x += p.vx * dt;
-        p.y += p.vy * dt;
-        p.r += p.grow * dt;
-        const age = (now - p.born) / 1000;
-        const a = p.alpha * Math.min(1, age / 0.15);
-        const pg = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, p.r);
-        pg.addColorStop(0, `rgba(${p.color}, ${a})`);
-        pg.addColorStop(0.6, `rgba(${p.color}, ${a * 0.45})`);
-        pg.addColorStop(1, `rgba(${p.color}, 0)`);
-        ctx.fillStyle = pg;
-        ctx.beginPath();
-        ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+      // the fire front: a ragged wall of fire racing out from the touch until
+      // it covers the page, white-hot behind, red at its edge
+      const u = Math.min(1, (e * 1000) / FILL_MS);
+      const F = (far * 1.25 + 60 * S) * (1 - Math.pow(1 - u, 3));
+      if (F > 1) {
+        ctx.globalCompositeOperation = "source-over";
+        const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, F);
+        g.addColorStop(0, "rgba(255, 248, 215, 0.97)");
+        g.addColorStop(0.3, "rgba(255, 214, 92, 0.95)");
+        g.addColorStop(0.7, "rgba(250, 146, 32, 0.93)");
+        g.addColorStop(0.9, "rgba(214, 70, 14, 0.9)");
+        g.addColorStop(1, "rgba(150, 32, 8, 0.75)");
+        ctx.fillStyle = g;
+        trace(edge(F, Math.min(F * 0.3, 70 * S), t));
         ctx.fill();
       }
-      // the flash where the fingertips touch
-      const f = Math.max(0, 1 - e / 0.6);
-      if (f > 0) {
-        const fr = (30 + 260 * e) * scale;
-        const fg = ctx.createRadialGradient(cx, cy, 0, cx, cy, fr);
-        fg.addColorStop(0, `rgba(255, 255, 240, ${f})`);
-        fg.addColorStop(0.4, `rgba(255, 230, 140, ${f * 0.8})`);
-        fg.addColorStop(1, "rgba(255, 210, 90, 0)");
-        ctx.fillStyle = fg;
-        ctx.fillRect(cx - fr, cy - fr, fr * 2, fr * 2);
+      // the flames: glowing tongues burning outwards, hot white -> yellow ->
+      // orange -> red as they die, flickering in size, added as light
+      if (e < 1.8) emit(Math.round(900 * dt), F * 0.55, F * 1.02, 340 * S, 70 * S);
+      ctx.globalCompositeOperation = "lighter";
+      const drag = Math.exp(-1.2 * dt);
+      flames = flames.filter((f) => (f.age += dt) < f.life);
+      for (const f of flames) {
+        f.vx *= drag;
+        f.vy = f.vy * drag - 90 * S * dt;
+        f.x += f.vx * dt;
+        f.y += f.vy * dt;
+        const k = f.age / f.life;
+        const img = sprites[Math.min(FIRE.length - 1, Math.floor(k * FIRE.length))];
+        const sz = f.size * (1 - k * 0.5) * (0.85 + Math.random() * 0.3);
+        ctx.globalAlpha = (1 - k) * 0.7;
+        ctx.drawImage(img, f.x - sz / 2, f.y - sz / 2, sz, sz);
       }
+      ctx.globalAlpha = 1;
+      // the flash of the touch itself
+      const fl = Math.max(0, 1 - e / 0.5);
+      if (fl > 0) {
+        const r = (40 + 380 * e) * S;
+        ctx.globalAlpha = fl;
+        ctx.drawImage(sprites[0], cx - r, cy - r, r * 2, r * 2);
+        ctx.globalAlpha = 1;
+      }
+    };
+
+    // the burn-away: the loader is cut along a ragged circle that grows from
+    // the centre (so the site shows inside it), and that edge glows like
+    // burning paper, throwing embers
+    const burn = (now: number) => {
+      const e = now - touchAt - REVEAL_AT;
+      const u = Math.min(1, e / REVEAL_MS);
+      const rough = 34 * S;
+      const H = (far + rough * 2 + 20) * (u * u * (3 - 2 * u));
+      const pts = edge(H, Math.min(H * 0.35, rough), now / 1000);
+      if (root) root.style.clipPath = `path(evenodd, "M0 0H${w}V${h}H0Z M${pts.map(([x, y]) => `${r2(x)} ${r2(y)}`).join("L")}Z")`;
+      if (ctx && H > 2) {
+        ctx.globalCompositeOperation = "lighter";
+        ctx.shadowColor = "rgba(255, 120, 20, 1)";
+        ctx.shadowBlur = 28 * S;
+        ctx.strokeStyle = "rgba(255, 150, 40, 0.95)";
+        ctx.lineWidth = 16 * S;
+        trace(pts);
+        ctx.stroke();
+        ctx.shadowBlur = 0;
+        ctx.strokeStyle = "rgba(255, 245, 200, 0.9)";
+        ctx.lineWidth = 4 * S;
+        ctx.stroke();
+        // embers flying off the burning edge
+        if (u < 1) emit(14, H, H + rough, 120 * S, 26 * S);
+      }
+      return u >= 1;
     };
 
     const tick = (now: number) => {
       const dt = Math.min(0.05, (now - last) / 1000);
       last = now;
-      let target = targetRef.current;
-      if (target === undefined) {
-        // preview: 0 -> 100 over 4.5s (smooth in and out); after the reveal
-        // and a pause, it starts again
-        const u = Math.min(1, (now - start) / 4500);
-        target = 100 * (0.5 - Math.cos(Math.PI * u) / 2);
-        shown = target; // already smooth
-      } else {
-        target = Math.min(100, Math.max(0, target));
-        shown += (target - shown) * Math.min(1, dt * 5);
-        if (Math.abs(target - shown) < 0.02) shown = target;
-      }
       if (!touchAt) {
+        const target = Math.min(100, Math.max(0, targetRef.current ?? 0));
+        if (target > shown) shown = Math.min(target, shown + Math.min((target - shown) * dt * 5 + 2 * dt, (100 / FLIGHT_MIN_S) * dt));
+        if (target - shown < 0.05) shown = target;
         const reach = shown / 100;
         if (ankitRef.current) ankitRef.current.style.transform = transformAt(placed.ankit, reach);
         if (claudeRef.current) claudeRef.current.style.transform = transformAt(placed.claude, reach);
@@ -318,40 +357,28 @@ export default function MughalFrame({ progress, onDone }: { progress?: number; o
           numRef.current.textContent = n;
           statusRef.current?.setAttribute("aria-label", `Loading ${n}%`);
         }
-        // the touch
         if (shown >= 100) {
+          // the touch
           touchAt = now;
-          spawnUntil = now + 700;
-          spawn(70, now);
+          emit(160, 0, 20 * S, 700 * S, 90 * S);
         }
       } else if (!finished) {
-        const e = now - touchAt;
-        if (now < spawnUntil) spawn(Math.round(260 * dt), now); // keeps pouring out for a moment
-        drawSmoke(now, dt);
-        // the reveal: from 1s after the touch, the opening grows from the
-        // centre past the corners
-        if (e > REVEAL_AT) {
-          const u = Math.min(1, (e - REVEAL_AT) / REVEAL_MS);
-          setHole((far + FEATHER * scale) * (u * u * (3 - 2 * u)) * 1.02);
-          if (u >= 1) {
+        drawFire(now, dt);
+        if (now - touchAt >= REVEAL_AT) {
+          if (!revealed) {
+            revealed = true;
+            cbRef.current.onReveal?.();
+          }
+          if (burn(now)) {
             finished = true;
-            if (root) root.style.visibility = "hidden";
-            onDoneRef.current?.();
+            cbRef.current.onDone?.();
           }
         }
-      } else if (targetRef.current === undefined && now - touchAt > REVEAL_AT + REVEAL_MS + 2000) {
-        // preview: show the site for 2s, then play it all again
-        reset();
-        start = now;
-        shown = 0;
       }
-      raf = requestAnimationFrame(tick);
+      if (!finished) raf = requestAnimationFrame(tick);
     };
     raf = requestAnimationFrame(tick);
-    return () => {
-      cancelAnimationFrame(raf);
-      reset();
-    };
+    return () => cancelAnimationFrame(raf);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- transformAt only reads r2
   }, [placed]);
 
@@ -447,8 +474,8 @@ export default function MughalFrame({ progress, onDone }: { progress?: number; o
       {/* flying Ankit and flying Claude, over the frame */}
       {figure("/images/flying-ankit.webp", placed.ankit, ankit.shadow, ankitRef)}
       {figure("/images/flying-claude.webp", placed.claude, claude.shadow, claudeRef)}
-      {/* the golden energy from the touch, spreading like smoke */}
-      <canvas ref={smokeRef} aria-hidden="true" className="pointer-events-none absolute inset-0" style={{ width: w, height: h }} />
+      {/* the energy fire from the touch, and the burning edge of the reveal */}
+      <canvas ref={fireRef} aria-hidden="true" className="pointer-events-none absolute inset-0" style={{ width: w, height: h }} />
     </div>
   );
 }
