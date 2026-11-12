@@ -4,18 +4,17 @@ import { useEffect, useState, type ReactNode } from "react";
 
 // Frame for the new loader (border only, for now): the teal textured
 // background (loader-bg-teal.webp) inside a border made of two SVGs from
-// raw-images (public/graphics/loader-frame/), with the outer gold line
-// trimmed off so only the inner one shows:
-//   corner.svg  - an L-shaped top-right corner (129x131, arms 49 thick),
-//                 mirrored into the other three corners
-//   border.svg  - a 105x49 band tile, repeated along the top and bottom;
-//                 border-vertical.svg is the same tile turned 90° for the sides
+// raw-images (public/graphics/loader-frame/):
+//   corner.svg  - an L-shaped top-left corner (39x40, arms 18 thick, gold
+//                 diamond), mirrored into the other three corners
+//   border.svg  - a 49x18 band tile, repeated along the top and bottom;
+//                 border-vertical.svg is the same tile turned for the sides
 // Each edge holds a whole number of tiles (stretched a hair to fit exactly),
 // so a tile is never cut off at a corner. The band is BAND px thick.
 
 const P = "/graphics/loader-frame/";
-const CORNER = { w: 129, h: 131 }; // top-right L, arms 49 thick (outer gold line trimmed)
-const TILE = { w: 105, h: 49 }; // band tile, gold line on its inner edge only
+const CORNER = { w: 39, h: 40 }; // top-left L, arms 18 thick
+const TILE = { w: 49, h: 18 }; // band tile
 const BAND = 20; // border thickness on screen (px)
 
 export default function MughalFrame() {
@@ -67,12 +66,14 @@ export default function MughalFrame() {
   return (
     <div className="fixed inset-0 overflow-hidden" style={{ background: "#002F2A url('/images/loader-bg-teal.webp') center / cover" }}>
       <svg width={w} height={h} viewBox={`0 0 ${w} ${h}`} className="absolute inset-0 block" aria-hidden="true">
+        {/* the band colour under the tiles, so a sub-pixel gap between tiles shows red, not a line */}
+        <path d={`M0 0H${w}V${t}H0Z M0 ${h - t}H${w}V${h}H0Z M0 0H${t}V${h}H0Z M${w - t} 0H${w}V${h}H${w - t}Z`} fill="#9B211C" />
         {tiles}
       </svg>
-      {corner(w - cw, 0, "none")}
-      {corner(0, 0, "scaleX(-1)")}
-      {corner(w - cw, h - ch, "scaleY(-1)")}
-      {corner(0, h - ch, "scale(-1, -1)")}
+      {corner(0, 0, "none")}
+      {corner(w - cw, 0, "scaleX(-1)")}
+      {corner(0, h - ch, "scaleY(-1)")}
+      {corner(w - cw, h - ch, "scale(-1, -1)")}
     </div>
   );
 }
