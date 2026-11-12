@@ -27,6 +27,7 @@ const OUTER = "#710004"; // band gradient, outer edge
 const INNER = "#A0251E"; // band gradient, inner edge
 const GOLD = "#F6A225"; // the ornaments' gold
 const GOLD_LINE = 2; // px, the inner gold line
+const TOUCH = 0.5; // px each fingertip stops short of the centre at 100% (they touch)
 const BLACK_LINE = GOLD_LINE; // px, the black line inside the gold one (same thickness)
 
 // `progress` (0-100) drives the percentage; without it (the preview page)
@@ -48,6 +49,9 @@ export default function MughalFrame({ progress }: { progress?: number }) {
     return () => cancelAnimationFrame(raf);
   }, [progress]);
   const pct = Math.round(progress ?? demo);
+  // how far the figures have flown towards each other: 0 at the start,
+  // 1 (fingertips touching in the centre) at 100%
+  const reach = Math.min(100, Math.max(0, progress ?? demo)) / 100;
   useEffect(() => {
     const fit = () => setSize({ w: window.innerWidth, h: window.innerHeight });
     fit();
@@ -110,8 +114,8 @@ export default function MughalFrame({ progress }: { progress?: number }) {
   // the flying figures (drawn over the frame, as in Figma): image size,
   // centre, Figma tilt, shadow, and where the shoulder and the pointing
   // fingertip are in the image (as fractions of its width / height)
-  const ankit = { w: 701.03, h: 520.84, cx: L(-52 + 707.24 / 2), cy: B(495.61 + 529.22 / 2), rotate: -0.69, shadow: "0 4px 12px rgba(0,0,0,0.5)", shoulder: [960 / 1455, 360 / 1081], tip: [1438 / 1455, 160 / 1081] };
-  const claude = { w: 683.63, h: 437.3, cx: R(718.27 + 810.44 / 2), cy: T(-40 + 718.11 / 2), rotate: -29.63, shadow: "0 4px 20px rgba(0,0,0,0.8)", shoulder: [480 / 1568, 375 / 1003], tip: [52 / 1568, 374 / 1003] };
+  const ankit = { w: 701.03, h: 520.84, cx: L(-52 + 707.24 / 2), cy: B(495.61 + 529.22 / 2), rotate: -0.69, shadow: "0 4px 12px rgba(0,0,0,0.5)", shoulder: [960 / 1455, 360 / 1081], tip: [1430 / 1455, 126 / 1081] };
+  const claude = { w: 683.63, h: 437.3, cx: R(718.27 + 810.44 / 2), cy: T(-40 + 718.11 / 2), rotate: -29.63, shadow: "0 4px 20px rgba(0,0,0,0.8)", shoulder: [480 / 1568, 375 / 1003], tip: [61 / 1568, 316 / 1003] };
   const r2 = (n: number) => Math.round(n * 100) / 100; // same numbers on server and client
   // the mandala, centred, its height 51% of the screen's shorter side
   const mh = Math.min(w, h) * 0.512, mw = (mh * MANDALA.w) / MANDALA.h;
@@ -143,8 +147,18 @@ export default function MughalFrame({ progress }: { progress?: number }) {
     // extra turn so shoulder -> fingertip points at the screen centre
     const delta = Math.atan2(h / 2 - shoulder[1], w / 2 - shoulder[0]) - Math.atan2(ay, ax);
     const angle = ((base + delta) * 180) / Math.PI;
-    // rotate about the shoulder, and move it to where the Figma tilt put it
-    const tx = shoulder[0] - (left + sx), ty = shoulder[1] - (top + sy);
+    // As loading goes 0 -> 100% the figure glides along its own arm towards
+    // the centre, so at 100% the two fingertips touch there (each stops
+    // TOUCH px short of the exact centre).
+    // the fingertip on screen: an arm's length from the shoulder, towards the centre
+    const arm = Math.hypot(ax, ay), toCentre = Math.hypot(w / 2 - shoulder[0], h / 2 - shoulder[1]) || 1;
+    const tipX = shoulder[0] + (arm * (w / 2 - shoulder[0])) / toCentre;
+    const tipY = shoulder[1] + (arm * (h / 2 - shoulder[1])) / toCentre;
+    const toC = Math.hypot(w / 2 - tipX, h / 2 - tipY);
+    const glide = toC > TOUCH ? (reach * (toC - TOUCH)) / toC : 0;
+    // rotate about the shoulder, move it to where the Figma tilt put it,
+    // then glide towards the centre
+    const tx = shoulder[0] - (left + sx) + (w / 2 - tipX) * glide, ty = shoulder[1] - (top + sy) + (h / 2 - tipY) * glide;
     return (
       // eslint-disable-next-line @next/next/no-img-element -- decorative figure
       <img
