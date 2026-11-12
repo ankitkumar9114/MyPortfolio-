@@ -14,10 +14,10 @@ import { PLANT } from "./cornerPlantEdge";
 // so a tile is never cut off at a corner. The band is BAND px thick.
 
 const P = "/graphics/loader-frame/";
-// the flying figures (cropped webp sizes) and where each fingertip is
-const ANKIT = { w: 1390, h: 835, tip: [1388, 169] as const };
-const CLAUDE = { w: 1235, h: 716, tip: [1, 336] as const };
-const CLOUD = { w: 2032, h: 565 }; // loader-cloud.webp
+// The Figma design this follows ("My portfolio", node 762:8732) is
+// 1440x1024; the pieces below are placed in those design units, each kept
+// against its nearest edge(s) and scaled by DS (see below).
+const DESIGN = { w: 1440, h: 1024 };
 const CORNER = { w: 39, h: 40 }; // top-left L, arms 18 thick
 const TILE = { w: 49, h: 18 }; // band tile
 const BAND = 20; // border thickness on screen (px)
@@ -67,26 +67,61 @@ export default function MughalFrame() {
   const ps = 0.7 * Math.min(1, Math.max(150, w * 0.27) / PLANT.w); // plant scale (70% of the earlier size)
   const pw = PLANT.w * ps, ph = PLANT.h * ps;
 
-  // --- flying Ankit and flying Claude, reaching for each other (as in the
-  // reference painting): Ankit lower left, Claude upper right, fingertips
-  // almost touching just above the centre. Same scale for both, sized to
-  // fit the space inside the frame, then 30% bigger (anything reaching the
-  // edges tucks under the frame, which is drawn on top).
-  const innerW = w - 2 * inset, innerH = h - 2 * inset;
-  const fs = 1.3 * Math.min(0.42, (0.9 * innerW) / (ANKIT.w + CLAUDE.w), (0.62 * innerH) / (CLAUDE.tip[1] + ANKIT.h - ANKIT.tip[1] + 40));
-  const gap = 18 * fs; // between the fingertips
-  const meetX = w / 2, meetY = h * 0.46;
-  const ankit = { left: meetX - gap - ANKIT.tip[0] * fs, top: meetY + 20 * fs - ANKIT.tip[1] * fs, width: ANKIT.w * fs, height: ANKIT.h * fs };
-  const claude = { left: meetX + gap - CLAUDE.tip[0] * fs, top: meetY - 20 * fs - CLAUDE.tip[1] * fs, width: CLAUDE.w * fs, height: CLAUDE.h * fs };
-
-  // --- clouds along the bottom (as in the reference painting): one in the
-  // bottom-left under Ankit, the same cloud mirrored in the bottom-right
-  // under Claude. In front of the figures, 25% bigger, with a third of each
-  // cloud pushed out past the side of the frame (hidden).
-  const cloudW = 1.25 * Math.max(180, w * 0.36), cloudH = (cloudW * CLOUD.h) / CLOUD.w;
-  const cloudTop = h - inset - cloudH * 0.92;
-  const cloudL = { left: inset - cloudW / 3, top: cloudTop, width: cloudW, height: cloudH };
-  const cloudR = { left: w - inset - (cloudW * 2) / 3, top: cloudTop, width: cloudW, height: cloudH, transform: "scaleX(-1)" };
+  // --- the Figma layout. Sizes scale by DS (the design fits the screen);
+  // positions are measured from the edge each piece hugs, so on another
+  // screen shape every piece stays against its own edge / the centre.
+  const DS = Math.min(w / DESIGN.w, h / DESIGN.h);
+  const L = (x: number) => x * DS; // from the left edge
+  const R = (x: number) => w - (DESIGN.w - x) * DS; // from the right edge
+  const C = (x: number) => w / 2 + (x - DESIGN.w / 2) * DS; // from the centre
+  const T = (y: number) => y * DS; // from the top edge
+  const B = (y: number) => h - (DESIGN.h - y) * DS; // from the bottom edge
+  type Piece = { src: string; x: number; y: number; w: number; h: number; rotate?: number; shadow?: string; flip?: boolean };
+  // exported layers (clouds, plant) already carry their rotation, flip and
+  // shadow; their box is the layer's export bounds in design units
+  const pieces: Piece[] = [
+    // red flower plant (40% opacity is baked in): bottom centre, and the same turned upside down at the top centre
+    { src: "loader-flower-plant.webp", x: C(262), y: B(645), w: 917, h: 379 },
+    { src: "loader-flower-plant.webp", x: C(262), y: T(0), w: 917, h: 379, rotate: 180 },
+    { src: "loader-cloud-left.webp", x: L(-210), y: T(179), w: 551, h: 232 }, // cloud 3, half out the left side
+    { src: "loader-cloud-right.webp", x: R(1036), y: T(333), w: 810, h: 415 }, // cloud 1, under Claude
+    { src: "loader-cloud-bottom.webp", x: L(15), y: B(765.77), w: 742.5, h: 258.5 }, // cloud 1 again, under Ankit
+    { src: "loader-cloud-top.webp", x: C(719), y: T(-56), w: 537, h: 226.5 }, // cloud 2, top
+  ];
+  // the flying figures (drawn over the frame, as in Figma): image size, centre, tilt, shadow
+  const ankit = { w: 701.03, h: 520.84, cx: L(-133.57 + 771.71 / 2), cy: B(388.97 + 620.82 / 2), rotate: 8.69, shadow: "0 4px 12px rgba(0,0,0,0.5)" };
+  const claude = { w: 683.63, h: 437.3, cx: R(738.72 + 792.73 / 2), cy: T(74.67 + 646.87 / 2), rotate: -20.25, shadow: "0 4px 20px rgba(0,0,0,0.8)" };
+  const r2 = (n: number) => Math.round(n * 100) / 100; // same numbers on server and client
+  const pieceImg = (p: Piece, i: number) => (
+    // eslint-disable-next-line @next/next/no-img-element -- decorative
+    <img
+      key={i}
+      src={`/images/${p.src}`}
+      alt=""
+      aria-hidden="true"
+      draggable={false}
+      className="pointer-events-none absolute select-none"
+      style={{ left: r2(p.x), top: r2(p.y), width: r2(p.w * DS), height: r2(p.h * DS), transform: p.rotate ? `rotate(${p.rotate}deg)` : undefined }}
+    />
+  );
+  const figure = (src: string, f: typeof ankit) => (
+    // eslint-disable-next-line @next/next/no-img-element -- decorative figure
+    <img
+      src={src}
+      alt=""
+      aria-hidden="true"
+      draggable={false}
+      className="pointer-events-none absolute select-none"
+      style={{
+        left: r2(f.cx - (f.w * DS) / 2),
+        top: r2(f.cy - (f.h * DS) / 2),
+        width: r2(f.w * DS),
+        height: r2(f.h * DS),
+        transform: `rotate(${f.rotate}deg)`,
+        filter: `drop-shadow(${f.shadow})`,
+      }}
+    />
+  );
 
   const corner = (left: number, top: number, flip: string) => (
     // eslint-disable-next-line @next/next/no-img-element -- decorative SVG
@@ -102,16 +137,13 @@ export default function MughalFrame() {
   );
   return (
     <div className="fixed inset-0 overflow-hidden" style={{ background: "#002F2A url('/images/loader-bg-teal.webp') center / cover" }}>
-      {/* flying Ankit and flying Claude */}
-      {/* eslint-disable-next-line @next/next/no-img-element -- decorative figure */}
-      <img src="/images/flying-ankit.webp" alt="" aria-hidden="true" draggable={false} className="pointer-events-none absolute select-none" style={ankit} />
-      {/* eslint-disable-next-line @next/next/no-img-element -- decorative figure */}
-      <img src="/images/flying-claude.webp" alt="" aria-hidden="true" draggable={false} className="pointer-events-none absolute select-none" style={claude} />
-      {/* clouds along the bottom */}
+      {/* corner plant panels */}
       {/* eslint-disable-next-line @next/next/no-img-element -- decorative */}
-      <img src="/images/loader-cloud.webp" alt="" aria-hidden="true" draggable={false} className="pointer-events-none absolute select-none" style={cloudL} />
+      <img src="/images/corner-plant.webp" alt="" aria-hidden="true" draggable={false} className="pointer-events-none absolute select-none" style={{ left: inset, top: inset, width: pw, height: ph }} />
       {/* eslint-disable-next-line @next/next/no-img-element -- decorative */}
-      <img src="/images/loader-cloud.webp" alt="" aria-hidden="true" draggable={false} className="pointer-events-none absolute select-none" style={cloudR} />
+      <img src="/images/corner-plant.webp" alt="" aria-hidden="true" draggable={false} className="pointer-events-none absolute select-none" style={{ left: w - inset - pw, top: inset, width: pw, height: ph, transform: "scaleX(-1)" }} />
+      {/* red flower plants and clouds */}
+      {pieces.map(pieceImg)}
       <svg width={w} height={h} viewBox={`0 0 ${w} ${h}`} className="absolute inset-0 block" aria-hidden="true">
         {/* the band: a gradient from the outer edge (#710004) to the inner
             edge (#A0251E) on each side, mitred at the corners; the SVG tiles
@@ -145,15 +177,13 @@ export default function MughalFrame() {
         {/* black line just inside the gold one, touching it all the way round */}
         <rect x={t + GOLD_LINE + BLACK_LINE / 2} y={t + GOLD_LINE + BLACK_LINE / 2} width={w - 2 * (t + GOLD_LINE) - BLACK_LINE} height={h - 2 * (t + GOLD_LINE) - BLACK_LINE} fill="none" stroke="#000000" strokeWidth={BLACK_LINE} />
       </svg>
-      {/* corner plant panels */}
-      {/* eslint-disable-next-line @next/next/no-img-element -- decorative */}
-      <img src="/images/corner-plant.webp" alt="" aria-hidden="true" draggable={false} className="pointer-events-none absolute select-none" style={{ left: inset, top: inset, width: pw, height: ph }} />
-      {/* eslint-disable-next-line @next/next/no-img-element -- decorative */}
-      <img src="/images/corner-plant.webp" alt="" aria-hidden="true" draggable={false} className="pointer-events-none absolute select-none" style={{ left: w - inset - pw, top: inset, width: pw, height: ph, transform: "scaleX(-1)" }} />
       {corner(0, 0, "none")}
       {corner(w - cw, 0, "scaleX(-1)")}
       {corner(0, h - ch, "scaleY(-1)")}
       {corner(w - cw, h - ch, "scale(-1, -1)")}
+      {/* flying Ankit and flying Claude, over the frame */}
+      {figure("/images/flying-ankit.webp", ankit)}
+      {figure("/images/flying-claude.webp", claude)}
     </div>
   );
 }
