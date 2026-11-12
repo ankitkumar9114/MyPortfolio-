@@ -3,7 +3,8 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { PLANT } from "./cornerPlantEdge";
 import { MANDALA_EDGE, MANDALA_TIPS } from "./mandalaEdge";
-import { createWaterSurface, EDGE_WOBBLE, REFRACT_PX, waterEdge, type WaterSurface } from "./waterSurface";
+import { gsap } from "@/lib/gsap";
+import { createGoldenReveal, loadThree, waveEdge, type GoldenReveal } from "./goldenReveal";
 
 // Frame for the new loader (border only, for now): the teal textured
 // background (loader-bg-teal.webp) inside a border made of two SVGs from
@@ -30,29 +31,22 @@ const GOLD = "#F6A225"; // the ornaments' gold
 const GOLD_LINE = 2; // px, the inner gold line
 const TOUCH = 0.5; // px each fingertip stops short of the centre at 100% (they touch)
 const BLACK_LINE = GOLD_LINE;
-// the water and the reveal (the surface is drawn by waterSurface.ts, three.js)
 const FLIGHT_MIN_S = 2.6; // the figures never fly in faster than this (0 -> 100%)
-const FILL_MS = 1300; // ms for the water to spread over the page
-const REVEAL_AT = 1000; // ms after the touch when the site starts to show
-const REVEAL_MS = 1900; // ms for the opening to reach the corners
 
 // `progress` (0-100, real loading progress from MughalLoader) drives the
 // percentage and the figures' flight.
 //
-// At 100% the fingertips touch and water spreads out from the touch over
-// the whole page: translucent grey, rippling, catching the light, with the
-// loader underneath refracted through it (water's refractive index), so it
-// sways as the water moves. A second in, the water opens from the centre
-// outwards (a wobbling edge) and the site shows through. `onReveal` fires
-// as the opening starts, `onDone` once the loader is gone.
+// At 100% the fingertips touch and the golden energy sequence plays
+// (goldenReveal.ts, three.js): a spark, a 3D explosion of golden energy,
+// then a golden wave that unlocks the site - the loader cut away along its
+// edge, its artwork dissolving into golden particles. `onReveal` fires as
+// the wave starts, `onDone` once the loader is gone.
 export default function MughalFrame({ progress = 0, onReveal, onDone }: { progress?: number; onReveal?: () => void; onDone?: () => void }) {
   const [size, setSize] = useState({ w: 1440, h: 900 });
   const rootRef = useRef<HTMLDivElement>(null);
-  const waterRef = useRef<HTMLCanvasElement>(null);
-  const turbRef = useRef<SVGFETurbulenceElement>(null);
-  const dispRef = useRef<SVGFEDisplacementMapElement>(null);
-  const turb2Ref = useRef<SVGFETurbulenceElement>(null);
-  const mixRef = useRef<SVGFECompositeElement>(null);
+  const fxRef = useRef<HTMLCanvasElement>(null);
+  const mandalaImgRef = useRef<HTMLImageElement>(null);
+  const mandalaLineRef = useRef<SVGSVGElement>(null);
   const cbRef = useRef({ onReveal, onDone });
   useEffect(() => {
     cbRef.current = { onReveal, onDone };
@@ -203,102 +197,95 @@ export default function MughalFrame({ progress = 0, onReveal, onDone }: { progre
   // eslint-disable-next-line react-hooks/exhaustive-deps -- place() depends only on w and h
   const placed = useMemo(() => ({ ankit: place(ankit), claude: place(claude) }), [w, h]);
 
-  // The water shader (three.js, loaded in the background as the loader
-  // starts, so it's ready by the touch)
-  const water = useRef<WaterSurface | null>(null);
+  // The golden energy sequence (three.js + bloom, loaded in the background
+  // as the loader starts, shaders compiled up front, so it's ready by the
+  // touch)
+  const fx = useRef<GoldenReveal | null>(null);
   useEffect(() => {
     let alive = true;
-    import("three").then((THREE) => {
-      const canvas = waterRef.current;
-      if (!alive || !canvas) return;
-      water.current = createWaterSurface(THREE, canvas, window.innerWidth, window.innerHeight);
-      water.current?.render({ time: 0, front: 0, hole: 0, wobble: 0 }); // compiles the shader now, not at the touch
-    });
+    loadThree()
+      .then((kit) => {
+        const canvas = fxRef.current;
+        if (!alive || !canvas) return;
+        fx.current = createGoldenReveal(kit, canvas, window.innerWidth, window.innerHeight, gsap);
+      })
+      .catch(() => {});
     return () => {
       alive = false;
-      water.current?.dispose();
-      water.current = null;
+      fx.current?.dispose();
+      fx.current = null;
     };
   }, []);
   useEffect(() => {
-    water.current?.resize(w, h);
+    fx.current?.resize(w, h);
   }, [w, h]);
 
-  // The animation: one loop moves both figures and the number, then plays
-  // the water and the reveal. The shown value eases towards the real
-  // progress (never faster than FLIGHT_MIN_S for the whole flight), so jumps
-  // in loading never make the figures jerk.
+  // The animation: one loop moves both figures and the number until they
+  // touch, then hands over to the golden sequence. The shown value eases
+  // towards the real progress (never faster than FLIGHT_MIN_S for the whole
+  // flight), so jumps in loading never make the figures jerk.
   useEffect(() => {
     const root = rootRef.current;
-    const turb = turbRef.current, disp = dispRef.current;
-    const far = Math.hypot(w, h) / 2; // centre to the corners
-    const S = far / 900; // tuned for a laptop screen
-    const wob = EDGE_WOBBLE * S;
-    let raf = 0, last = performance.now(), shown = 0, touchAt = 0, revealed = false, finished = false;
+    let raf = 0, last = performance.now(), shown = 0, touched = false;
+
+    // the loader is cut along the golden wave's ragged edge (the same
+    // formula the shader draws), so the site shows inside it
+    const cut = (wave: { radius: number; rag: number; time: number } | null) => {
+      if (!root || !wave) return;
+      const cx = w / 2, cy = h / 2, pts: string[] = [];
+      for (let i = 0; i < 160; i++) {
+        const a = (i / 160) * Math.PI * 2, r = Math.max(0, wave.radius + wave.rag * waveEdge(a, wave.time));
+        pts.push(`${r2(cx + Math.cos(a) * r)} ${r2(cy + Math.sin(a) * r)}`);
+      }
+      root.style.clipPath = `path(evenodd, "M0 0H${w}V${h}H0Z M${pts.join("L")}Z")`;
+    };
+    // the mandala lights up for a moment as the energy passes through it
+    const mandalaGlow = (g: number) => {
+      for (const el of [mandalaImgRef.current, mandalaLineRef.current]) {
+        if (!el) continue;
+        el.style.opacity = String(r2(0.3 + 0.6 * g));
+        el.style.filter = g > 0.01 ? `brightness(${r2(1 + 0.9 * g)}) drop-shadow(0 0 ${r2(14 * g)}px rgba(242, 181, 68, ${r2(0.85 * g)}))` : "";
+      }
+    };
+    const touch = () => {
+      const hooks = {
+        cut,
+        mandala: mandalaGlow,
+        onReveal: () => cbRef.current.onReveal?.(),
+        onDone: () => cbRef.current.onDone?.(),
+      };
+      if (fx.current) {
+        fx.current.play(hooks);
+        return;
+      }
+      // no WebGL: a plain fade instead
+      hooks.onReveal();
+      if (root) gsap.to(root, { opacity: 0, duration: 0.6, ease: "power1.inOut", onComplete: hooks.onDone });
+      else hooks.onDone();
+    };
 
     const tick = (now: number) => {
       const dt = Math.min(0.05, (now - last) / 1000);
       last = now;
-      if (!touchAt) {
-        const target = Math.min(100, Math.max(0, targetRef.current ?? 0));
-        if (target > shown) shown = Math.min(target, shown + Math.min((target - shown) * dt * 5 + 2 * dt, (100 / FLIGHT_MIN_S) * dt));
-        if (target - shown < 0.05) shown = target;
-        const reach = shown / 100;
-        if (ankitRef.current) ankitRef.current.style.transform = transformAt(placed.ankit, reach);
-        if (claudeRef.current) claudeRef.current.style.transform = transformAt(placed.claude, reach);
-        const n = String(Math.floor(shown + 1e-6));
-        if (numRef.current && numRef.current.textContent !== n) {
-          numRef.current.textContent = n;
-          statusRef.current?.setAttribute("aria-label", `Loading ${n}%`);
-        }
-        if (shown >= 100) {
-          // the touch: the loader goes under the water
-          touchAt = now;
-          // ripple size follows the screen size (set once, then left alone)
-          const f = `${r2(0.0055 / S * 1000) / 1000} ${r2(0.008 / S * 1000) / 1000}`;
-          turb?.setAttribute("baseFrequency", f);
-          turb2Ref.current?.setAttribute("baseFrequency", f);
-          if (root) root.style.filter = "url(#mughal-water)";
-        }
-      } else if (!finished) {
-        const e = now - touchAt, t = e / 1000;
-        // the water spreads out from the touch until it covers the page
-        const u = Math.min(1, e / FILL_MS);
-        const front = (far + 80 * S) * (1 - Math.pow(1 - u, 3));
-        // the loader underneath sways with the water: the refraction grows
-        // as the water covers it, and the ripples drift
-        const wa = 0.5 + 0.5 * Math.cos(t * 2.2);
-        mixRef.current?.setAttribute("k2", String(r2(wa)));
-        mixRef.current?.setAttribute("k3", String(r2(1 - wa)));
-        disp?.setAttribute("scale", String(r2(REFRACT_PX * S * u * (0.85 + 0.15 * Math.sin(t * 3.1)))));
-        // from REVEAL_AT, the water opens from the centre to show the site:
-        // the loader is cut along the same wobbling edge the shader draws
-        let hole = 0, wobble = 0;
-        if (e >= REVEAL_AT) {
-          if (!revealed) {
-            revealed = true;
-            cbRef.current.onReveal?.();
-          }
-          const v = Math.min(1, (e - REVEAL_AT) / REVEAL_MS);
-          hole = (far + wob + 10) * (v * v * (3 - 2 * v));
-          // a small opening is nearly round; the wobble grows as it opens
-          wobble = wob * Math.min(1, hole / (220 * S));
-          if (root) {
-            const cx = w / 2, cy = h / 2, pts: string[] = [];
-            for (let i = 0; i < 144; i++) {
-              const a = (i / 144) * Math.PI * 2, r = Math.max(0, hole + wobble * waterEdge(a, t));
-              pts.push(`${r2(cx + Math.cos(a) * r)} ${r2(cy + Math.sin(a) * r)}`);
-            }
-            root.style.clipPath = `path(evenodd, "M0 0H${w}V${h}H0Z M${pts.join("L")}Z")`;
-          }
-          if (v >= 1) finished = true;
-        }
-        water.current?.render({ time: t, front, hole, wobble });
-        if (finished) cbRef.current.onDone?.();
+      const target = Math.min(100, Math.max(0, targetRef.current ?? 0));
+      if (target > shown) shown = Math.min(target, shown + Math.min((target - shown) * dt * 5 + 2 * dt, (100 / FLIGHT_MIN_S) * dt));
+      if (target - shown < 0.05) shown = target;
+      const reach = shown / 100;
+      if (ankitRef.current) ankitRef.current.style.transform = transformAt(placed.ankit, reach);
+      if (claudeRef.current) claudeRef.current.style.transform = transformAt(placed.claude, reach);
+      const n = String(Math.floor(shown + 1e-6));
+      if (numRef.current && numRef.current.textContent !== n) {
+        numRef.current.textContent = n;
+        statusRef.current?.setAttribute("aria-label", `Loading ${n}%`);
       }
-      if (!finished) raf = requestAnimationFrame(tick);
+      if (shown >= 100) {
+        touched = true;
+        touch();
+        return; // the golden sequence takes it from here
+      }
+      raf = requestAnimationFrame(tick);
     };
-    raf = requestAnimationFrame(tick);
+    if (!touched) raf = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(raf);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- transformAt only reads r2
   }, [placed]);
@@ -327,9 +314,9 @@ export default function MughalFrame({ progress = 0, onReveal, onDone }: { progre
       {pieces.map(pieceImg)}
       {/* the gold mandala (raw-images/mandala-lines.svg, lines in the reference painting's muted ochre) in the centre, behind the figures' hands */}
       {/* eslint-disable-next-line @next/next/no-img-element -- decorative SVG */}
-      <img src={`${P}mandala.svg`} alt="" aria-hidden="true" draggable={false} className="mandala-spin pointer-events-none absolute select-none" style={{ ...mandala, opacity: 0.3 }} />
+      <img ref={mandalaImgRef} src={`${P}mandala.svg`} alt="" aria-hidden="true" draggable={false} className="mandala-spin pointer-events-none absolute select-none" style={{ ...mandala, opacity: 0.3 }} />
       {/* a dotted line hugging the mandala's own edge, a little outside it, same ochre and opacity */}
-      <svg aria-hidden="true" className="mandala-spin pointer-events-none absolute overflow-visible" viewBox="0 0 1 1" preserveAspectRatio="none" style={{ ...mandala, opacity: 0.3 }}>
+      <svg ref={mandalaLineRef} aria-hidden="true" className="mandala-spin pointer-events-none absolute overflow-visible" viewBox="0 0 1 1" preserveAspectRatio="none" style={{ ...mandala, opacity: 0.3 }}>
         <path d={MANDALA_EDGE} fill="none" stroke="#B9823A" strokeWidth={0.009} strokeLinecap="round" strokeDasharray="0.0001 0.021" />
         {MANDALA_TIPS.map(([x, y]) => (
           <circle key={`${x},${y}`} cx={x} cy={y} r={0.008} fill="#B9823A" />
@@ -397,21 +384,9 @@ export default function MughalFrame({ progress = 0, onReveal, onDone }: { progre
       {figure("/images/flying-ankit.webp", placed.ankit, ankit.shadow, ankitRef)}
       {figure("/images/flying-claude.webp", placed.claude, claude.shadow, claudeRef)}
       </div>
-      {/* the refraction of the loader under the water (switched on at the
-          touch): moving noise shifts what's underneath, by up to REFRACT_PX */}
-      <svg aria-hidden="true" width="0" height="0" className="absolute">
-        <filter id="mughal-water" x="0" y="0" width="100%" height="100%" colorInterpolationFilters="sRGB">
-          {/* two still ripple patterns, blended into each other over time (so
-              the water moves without the noise being redrawn every frame) */}
-          <feTurbulence ref={turbRef} type="fractalNoise" baseFrequency="0.0055 0.008" numOctaves={2} seed={7} result="a" />
-          <feTurbulence ref={turb2Ref} type="fractalNoise" baseFrequency="0.0055 0.008" numOctaves={2} seed={23} result="b" />
-          <feComposite ref={mixRef} in="a" in2="b" operator="arithmetic" k1="0" k2="0.5" k3="0.5" k4="0" result="ripples" />
-          <feDisplacementMap ref={dispRef} in="SourceGraphic" in2="ripples" scale="0" xChannelSelector="R" yChannelSelector="G" />
-        </filter>
-      </svg>
-      {/* the water's surface (waterSurface.ts): over the loader, and outside
-          it so the loader's cut doesn't cut the water's edge too */}
-      <canvas ref={waterRef} aria-hidden="true" className="pointer-events-none fixed inset-0 z-[1001] h-full w-full" />
+      {/* the golden energy sequence (goldenReveal.ts): a transparent three.js
+          canvas over the loader and the site */}
+      <canvas ref={fxRef} aria-hidden="true" className="pointer-events-none fixed inset-0 z-[1001] h-full w-full" />
     </>
   );
 }

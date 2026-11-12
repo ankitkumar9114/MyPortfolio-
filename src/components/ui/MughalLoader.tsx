@@ -9,7 +9,7 @@ import { collectImageUrls, prepareImage } from "./loaderAssets";
 // The site's full-screen loader: the Mughal frame (MughalFrame), its
 // percentage driven by real loading - every image the first screens use on
 // this screen size, plus the fonts (see loaderAssets). At 100% the figures'
-// fingertips touch, water spreads over the page and opens from the
+// fingertips touch, golden energy bursts out and a golden wave opens from the
 // centre to show the site. Locks page scroll while up; skipped entirely
 // under reduced motion.
 
@@ -101,7 +101,7 @@ export default function MughalLoader() {
   return (
     <MughalFrame
       progress={progress}
-      // the hero's entrance animations start as the water opens
+      // the hero's entrance animations start as the golden wave opens
       onReveal={markPreloaderComplete}
       onDone={() => {
         document.documentElement.style.overflow = "";
