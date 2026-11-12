@@ -4,18 +4,19 @@ import { useEffect, useState, type ReactNode } from "react";
 
 // Frame for the new loader (border only, for now): the teal textured
 // background (loader-bg-teal.webp) inside a border made of two SVGs from
-// raw-images (public/graphics/loader-frame/):
-//   corner.svg  - an L-shaped top-right corner (134x136, arms 54 thick),
+// raw-images (public/graphics/loader-frame/), with the outer gold line
+// trimmed off so only the inner one shows:
+//   corner.svg  - an L-shaped top-right corner (129x131, arms 49 thick),
 //                 mirrored into the other three corners
-//   border.svg  - a 105x54 band tile, repeated along the top and bottom;
+//   border.svg  - a 105x49 band tile, repeated along the top and bottom;
 //                 border-vertical.svg is the same tile turned 90° for the sides
 // Each edge holds a whole number of tiles (stretched a hair to fit exactly),
 // so a tile is never cut off at a corner. The band is BAND px thick.
 
 const P = "/graphics/loader-frame/";
-const CORNER = { w: 134, h: 136 };
-const TILE = { w: 105, h: 54 }; // band thickness = 54 in the SVGs
-const BAND = 16; // border thickness on screen (px)
+const CORNER = { w: 129, h: 131 }; // top-right L, arms 49 thick (outer gold line trimmed)
+const TILE = { w: 105, h: 49 }; // band tile, gold line on its inner edge only
+const BAND = 20; // border thickness on screen (px)
 
 export default function MughalFrame() {
   const [size, setSize] = useState({ w: 1440, h: 900 });
@@ -40,11 +41,15 @@ export default function MughalFrame() {
   const tiles: ReactNode[] = [];
   for (let i = 0; i < hn; i++) {
     const x = cw + i * hTile;
-    for (const y of [0, h - t]) tiles.push(<image key={`h${i}-${y}`} href={`${P}border.svg`} x={x} y={y} width={hTile + SEAM} height={t} preserveAspectRatio="none" />);
+    // top: as drawn (gold line inside, at the bottom); bottom: flipped
+    tiles.push(<image key={`t${i}`} href={`${P}border.svg`} x={x} y={0} width={hTile + SEAM} height={t} preserveAspectRatio="none" />);
+    tiles.push(<image key={`b${i}`} href={`${P}border.svg`} x={x} y={-h} width={hTile + SEAM} height={t} preserveAspectRatio="none" transform="scale(1 -1)" />);
   }
   for (let i = 0; i < vn; i++) {
     const y = ch + i * vTile;
-    for (const x of [0, w - t]) tiles.push(<image key={`v${i}-${x}`} href={`${P}border-vertical.svg`} x={x} y={y} width={t} height={vTile + SEAM} preserveAspectRatio="none" />);
+    // left: as drawn (gold line inside, on the right); right: mirrored
+    tiles.push(<image key={`l${i}`} href={`${P}border-vertical.svg`} x={0} y={y} width={t} height={vTile + SEAM} preserveAspectRatio="none" />);
+    tiles.push(<image key={`r${i}`} href={`${P}border-vertical.svg`} x={-w} y={y} width={t} height={vTile + SEAM} preserveAspectRatio="none" transform="scale(-1 1)" />);
   }
 
   const corner = (left: number, top: number, flip: string) => (
