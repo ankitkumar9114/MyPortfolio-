@@ -7,7 +7,6 @@ import { gsap, isReducedMotion } from "@/lib/gsap";
 import { LOADER_REVEAL, type LoaderReveal } from "@/lib/loaderReveal";
 import { createGoldenReveal, loadThree, waveEdge, type GoldenReveal } from "./goldenReveal";
 import { playMandalaReveal } from "./mandalaReveal";
-import { createLoaderEvents } from "@/lib/loaderEvents";
 
 // Frame for the new loader (border only, for now): the teal textured
 // background (loader-bg-teal.webp) inside a border made of two SVGs from
@@ -110,7 +109,6 @@ export default function MughalFrame({ progress = 0, reveal = LOADER_REVEAL, onRe
   const orbRef = useRef<HTMLDivElement>(null);
   const orbHaloRef = useRef<HTMLDivElement>(null);
   const orbAttractRef = useRef<HTMLDivElement>(null);
-  const orbStreamsRef = useRef<SVGSVGElement>(null);
   const orbArcsRef = useRef<SVGSVGElement>(null);
   const ankitGlowRef = useRef<HTMLDivElement>(null);
   const claudeGlowRef = useRef<HTMLDivElement>(null);
@@ -288,12 +286,10 @@ export default function MughalFrame({ progress = 0, reveal = LOADER_REVEAL, onRe
   // eslint-disable-next-line react-hooks/exhaustive-deps -- place() depends only on w and h
   const placed = useMemo(() => ({ ankit: place(ankit), claude: place(claude) }), [w, h]);
 
-  // The golden ending's three.js orb and explosion, loaded in the background
-  // once the page has rendered (nothing waits for it). Until it's ready -
-  // or if WebGL isn't available - the CSS orb stands in; then the three.js
-  // orb takes over at the same charge.
+  // The golden energy sequence (three.js + bloom, loaded in the background
+  // as the loader starts, shaders compiled up front, so it's ready by the
+  // touch)
   const fx = useRef<GoldenReveal | null>(null);
-  const chargeRef = useRef(0);
   useEffect(() => {
     if (reveal !== "golden") return; // the mandala ending needs no three.js
     let alive = true;
@@ -302,9 +298,6 @@ export default function MughalFrame({ progress = 0, reveal = LOADER_REVEAL, onRe
         const canvas = fxRef.current;
         if (!alive || !canvas) return;
         fx.current = createGoldenReveal(kit, canvas, window.innerWidth, window.innerHeight, gsap);
-        if (!fx.current) return;
-        fx.current.setCharge(chargeRef.current);
-        if (orbRef.current) orbRef.current.style.visibility = "hidden";
       })
       .catch(() => {});
     return () => {
@@ -328,8 +321,6 @@ export default function MughalFrame({ progress = 0, reveal = LOADER_REVEAL, onRe
       if (ankitGlowRef.current) ankitGlowRef.current.style.transform = transformAt(placed.ankit, reach);
       if (claudeGlowRef.current) claudeGlowRef.current.style.transform = transformAt(placed.claude, reach);
       buildUp(reach);
-      chargeRef.current = reach;
-      fx.current?.setCharge(reach);
     }
     const n = String(Math.floor(shown + 1e-6));
     if (numRef.current && numRef.current.textContent !== n) {
@@ -342,10 +333,10 @@ export default function MughalFrame({ progress = 0, reveal = LOADER_REVEAL, onRe
     const orb = orbRef.current;
     if (!orb) return;
     orb.style.opacity = "1";
-    orb.style.transform = `scale(${r2(1 + 1.9 * Math.pow(k, 1.6))})`;
+    const g = Math.min(1, Math.max(0, (k - 0.78) / 0.22)); // grows only once the hands are this close
+    orb.style.transform = `scale(${r2(0.5 + 2.4 * g * g * (3 - 2 * g))})`;
     if (orbHaloRef.current) orbHaloRef.current.style.opacity = String(r2(0.35 + 0.65 * k));
     if (orbAttractRef.current) orbAttractRef.current.style.opacity = String(r2(Math.min(1, Math.max(0, (k - 0.05) / 0.3))));
-    if (orbStreamsRef.current) orbStreamsRef.current.style.opacity = String(r2(Math.min(0.9, Math.max(0, (k - 0.55) / 0.35))));
     if (orbArcsRef.current) orbArcsRef.current.style.opacity = String(r2(Math.min(1, Math.max(0, (k - 0.72) / 0.2))));
     const light = String(r2(Math.pow(k, 1.4) * 0.95));
     if (ankitGlowRef.current) ankitGlowRef.current.style.opacity = light;
@@ -360,9 +351,9 @@ export default function MughalFrame({ progress = 0, reveal = LOADER_REVEAL, onRe
   // the orb bursting outwards at the touch (p: 0..1 over ORB_BURST_S)
   const orbBurst = (p: number) => {
     const orb = orbRef.current;
-    if (!orb || fx.current) return; // the three.js orb does its own
+    if (!orb) return;
     const e = 1 - Math.pow(1 - Math.min(1, Math.max(0, p)), 2);
-    orb.style.transform = `scale(${r2(2.9 + 3.1 * e)})`;
+    orb.style.transform = `scale(${r2(2.9 + 3.1 * e)})`; // from its size at the touch
     orb.style.opacity = String(r2(1 - e));
   };
   // the loader is cut along the golden wave's ragged edge (the same
@@ -386,43 +377,25 @@ export default function MughalFrame({ progress = 0, reveal = LOADER_REVEAL, onRe
     for (const el of [mandalaImgRef.current, mandalaLineRef.current]) {
       if (!el) continue;
       el.style.opacity = String(r2(0.65 + 0.35 * g));
-      el.style.filter = g > 0.01 ? `brightness(${r2(1 + 0.4 * g)}) saturate(${r2(1 + 0.25 * g)})` : "";
+      el.style.filter = g > 0.01 ? `brightness(${r2(1 + 0.9 * g)}) drop-shadow(0 0 ${r2(14 * g)}px rgba(242, 181, 68, ${r2(0.85 * g)}))` : "";
     }
   };
   // start the ending (paused, and kept at the end, when scrubbing)
   type Tl = { time: () => number; seek: (t: number, suppress?: boolean) => unknown; duration: () => number };
-  // the characters, their light, the mandala and the percentage fading out
-  // as the golden reveal opens (k 0..1)
-  const fadeArt = (k: number) => {
-    const o = String(r2(1 - k));
-    for (const el of [ankitRef.current, claudeRef.current, boxRef.current, statusRef.current]) if (el) el.style.opacity = o;
-    for (const el of [ankitGlowRef.current, claudeGlowRef.current]) if (el && k > 0) el.style.opacity = String(r2(0.95 * (1 - k)));
-  };
-  const startEnding = (scrubbing: boolean, ev?: ReturnType<typeof createLoaderEvents>): Tl | null => {
+  const startEnding = (scrubbing: boolean): Tl | null => {
     const root = rootRef.current;
     const hooks = {
       cut,
       mandala: mandalaGlow,
-      fade: fadeArt,
-      onReveal: () => {
-        ev?.emit("websiteRevealTriggered");
-        cbRef.current.onReveal?.();
-      },
-      onDone: () => {
-        ev?.emit("loaderCompleted");
-        cbRef.current.onDone?.();
-      },
+      onReveal: () => cbRef.current.onReveal?.(),
+      onDone: () => cbRef.current.onDone?.(),
     };
     const els = { box: boxRef.current, litWrap: litWrapRef.current, litInner: litInnerRef.current, litLine: litLineRef.current, pulse: pulseRef.current, wave: ringRef.current };
     if (reveal === "mandala" && root && els.box && els.litWrap && els.litInner && els.litLine && els.pulse && els.wave) {
       const fade = [ankitRef.current, claudeRef.current, statusRef.current].filter((e): e is HTMLImageElement | HTMLDivElement => !!e);
       return playMandalaReveal({ root, box: els.box, litWrap: els.litWrap, litInner: els.litInner, litLine: els.litLine, pulse: els.pulse, wave: els.wave, fade }, gsap, hooks, isReducedMotion(), scrubbing);
     }
-    if (golden && fx.current) {
-      const tl = fx.current.play(hooks, { scrub: scrubbing });
-      ev?.emit("goldenExplosionTriggered");
-      return tl;
-    }
+    if (golden && fx.current) return fx.current.play(hooks, { scrub: scrubbing });
     if (scrubbing) return null; // three.js not ready yet: try again on the next move
     // no WebGL: a plain fade instead
     hooks.onReveal();
@@ -440,23 +413,15 @@ export default function MughalFrame({ progress = 0, reveal = LOADER_REVEAL, onRe
     if (scrubbing) return;
     let raf = 0, last = 0, start = 0;
     const st: FlightState = { shown: 0, follow: 0 };
-    const ev = createLoaderEvents();
     const tick = (now: number) => {
-      if (!start) {
-        start = last = now;
-        ev.emit("loaderStarted");
-        if (golden) ev.emit("energyOrbActivated");
-      }
+      if (!start) start = last = now;
       const dt = Math.min(0.05, (now - last) / 1000);
       last = now;
       flightStep(st, (now - start) / 1000, dt, Math.min(100, Math.max(0, targetRef.current ?? 0)), reveal);
       showFlight(st.shown);
-      if (st.shown > 0) ev.emit("charactersApproaching");
-      if (st.shown >= 64) ev.emit("energyBuilding"); // ~1.5 s in, with the page loaded
       if (st.shown >= 100) {
         // the touch: the orb bursts, the ending takes it from here
-        ev.emit("charactersTouched");
-        if (golden && orbRef.current && !fx.current) {
+        if (golden && orbRef.current) {
           const orb = orbRef.current, t0 = performance.now();
           const burst = (n: number) => {
             orbBurst((n - t0) / 1000 / ORB_BURST_S);
@@ -464,7 +429,7 @@ export default function MughalFrame({ progress = 0, reveal = LOADER_REVEAL, onRe
           };
           if (orb) requestAnimationFrame(burst);
         }
-        startEnding(false, ev);
+        startEnding(false);
         return;
       }
       raf = requestAnimationFrame(tick);
@@ -612,7 +577,7 @@ export default function MughalFrame({ progress = 0, reveal = LOADER_REVEAL, onRe
         </span>
       </div>
       {/* flying Ankit and flying Claude, over the frame */}
-      {reveal === "golden" && <Orb size={mh * 0.42} cx={w / 2} cy={h / 2} orbRef={orbRef} haloRef={orbHaloRef} attractRef={orbAttractRef} streamsRef={orbStreamsRef} arcsRef={orbArcsRef} />}
+      {reveal === "golden" && <Orb size={mh * 0.42} cx={w / 2} cy={h / 2} orbRef={orbRef} haloRef={orbHaloRef} attractRef={orbAttractRef} arcsRef={orbArcsRef} />}
       {figure("/images/flying-ankit.webp", placed.ankit, ankit.shadow, ankitRef)}
       {figure("/images/flying-claude.webp", placed.claude, claude.shadow, claudeRef)}
       {reveal === "golden" && figureLight("/images/flying-ankit.webp", placed.ankit, ankit.tip, ankitGlowRef)}
@@ -632,7 +597,7 @@ export default function MughalFrame({ progress = 0, reveal = LOADER_REVEAL, onRe
 // approach. `size` is the orb's whole box; the core is a small part of it.
 type DivRef = React.RefObject<HTMLDivElement | null>;
 type SvgRef = React.RefObject<SVGSVGElement | null>;
-function Orb({ size, cx, cy, orbRef, haloRef, attractRef, streamsRef, arcsRef }: { size: number; cx: number; cy: number; orbRef: DivRef; haloRef: DivRef; attractRef: DivRef; streamsRef: SvgRef; arcsRef: SvgRef }) {
+function Orb({ size, cx, cy, orbRef, haloRef, attractRef, arcsRef }: { size: number; cx: number; cy: number; orbRef: DivRef; haloRef: DivRef; attractRef: DivRef; arcsRef: SvgRef }) {
   const q = (n: number) => Math.round(n * 100) / 100;
   const core = size * 0.13, mote = Math.max(3, size * 0.022);
   // motes drawn in from all round (fixed, so server and browser agree)
@@ -658,12 +623,6 @@ function Orb({ size, cx, cy, orbRef, haloRef, attractRef, streamsRef, arcsRef }:
           <div key={i} className="orb-mote orb-attract absolute" style={{ left: q(size / 2 - mote / 2), top: q(size / 2 - mote / 2), width: q(mote), height: q(mote), ["--dx" as string]: `${p.dx}px`, ["--dy" as string]: `${p.dy}px`, animationDelay: `${p.delay}s` }} />
         ))}
       </div>
-      {/* circling energy streams */}
-      <svg ref={streamsRef} viewBox="0 0 100 100" className="orb-streams absolute inset-0 h-full w-full overflow-visible" style={{ opacity: 0 }}>
-        <ellipse cx="50" cy="50" rx="17" ry="9" fill="none" stroke="#F2B544" strokeWidth="0.6" strokeLinecap="round" strokeDasharray="14 40" transform="rotate(-25 50 50)" />
-        <ellipse cx="50" cy="50" rx="15" ry="11" fill="none" stroke="#FFD27A" strokeWidth="0.45" strokeLinecap="round" strokeDasharray="10 30" transform="rotate(40 50 50)" />
-        <circle cx="50" cy="50" r="13" fill="none" stroke="#E8892B" strokeWidth="0.35" strokeDasharray="5 12" opacity="0.8" />
-      </svg>
       {/* thin crackling arcs */}
       <svg ref={arcsRef} viewBox="0 0 100 100" className="absolute inset-0 h-full w-full overflow-visible" style={{ opacity: 0 }}>
         {arcs.map((a, i) => (
@@ -672,16 +631,6 @@ function Orb({ size, cx, cy, orbRef, haloRef, attractRef, streamsRef, arcsRef }:
       </svg>
       {/* the core, with motes orbiting it */}
       <div className="orb-core absolute" style={{ left: q(size / 2 - core / 2), top: q(size / 2 - core / 2), width: q(core), height: q(core) }} />
-      <div className="orb-orbit absolute" style={{ left: q(size * 0.36), top: q(size * 0.36), width: q(size * 0.28), height: q(size * 0.28) }}>
-        {[0, 1, 2].map((i) => (
-          <div key={i} className="orb-mote absolute" style={{ left: q(size * 0.14 + Math.cos((i * 2 * Math.PI) / 3) * size * 0.13 - mote / 2), top: q(size * 0.14 + Math.sin((i * 2 * Math.PI) / 3) * size * 0.13 - mote / 2), width: q(mote), height: q(mote) }} />
-        ))}
-      </div>
-      <div className="orb-orbit-back absolute" style={{ left: q(size * 0.31), top: q(size * 0.31), width: q(size * 0.38), height: q(size * 0.38) }}>
-        {[0, 1].map((i) => (
-          <div key={i} className="orb-mote absolute" style={{ left: q(size * 0.19 + Math.cos(i * Math.PI + 0.8) * size * 0.19 - mote * 0.4), top: q(size * 0.19 + Math.sin(i * Math.PI + 0.8) * size * 0.19 - mote * 0.4), width: q(mote * 0.8), height: q(mote * 0.8) }} />
-        ))}
-      </div>
     </div>
   );
 }

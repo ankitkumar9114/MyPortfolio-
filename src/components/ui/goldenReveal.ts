@@ -1,77 +1,68 @@
-// The golden ending, drawn with three.js on one transparent canvas over the
-// loader (the artwork and the site stay HTML/CSS).
+// The loader's ending, drawn with three.js on a transparent canvas over the
+// loader: when the two index fingertips touch, an antique-gold spark lights
+// up, bursts into a 3D explosion of golden energy (particles, rings, trails,
+// a shockwave), and an expanding golden wave unlocks the site - the loader's
+// artwork dissolving into golden particles along it - before everything
+// fades and every GPU resource is released.
 //
-// Before the touch: a small 3D golden energy orb sits at the centre of the
-// mandala from the first frame - a noise-lit core, a translucent Fresnel
-// shell, 3 orbital rings with sparks running along them, orbiting motes, a
-// soft glow and (as it charges) thin electrical arcs. MughalFrame sets its
-// charge (0..1) as the characters approach; it grows and quickens with it.
+// Timeline (seconds from the touch; one GSAP timeline drives everything and
+// is also the clock the shaders read):
+// (MughalFrame's orb has already built the energy up before the touch)
+//   0.0-0.06 spark: the core flares, the point light comes on
+//   0.06-0.6 explosion: particles, concentric rings, curved trails, shockwave;
+//            the mandala lights up for a moment
+//   0.6-1.3  the energy settles, the mandala still lit
+//   1.3-2.5  reveal (3.5 s from the loader's start): the wave (a ragged golden outline) runs out to the
+//            corners; inside it the loader is cut away (MughalFrame applies
+//            the same edge as a clip-path) and turns into golden particles
+//   2.5-3.0  everything left fades out; then dispose and stop
 //
-// At the touch (the timeline, seconds from the contact):
-//   0.00-0.08  the rings and shell contract, the core peaks
-//   0.08       the orb releases it: particles burst outwards, a shockwave and
-//              2 energy rings expand, energy trails, a brief golden flash,
-//              the mandala fully lit
-//   0.36       the website reveal: a ragged golden wave opens the site
-//              (MughalFrame cuts the loader along the same edge), the
-//              artwork dissolving into golden flakes along it, the
-//              characters and mandala fading
-//   ...END     what's left fades; then every GPU resource is released and
-//              the render loop stops
-//
-// Coordinates: an orthographic camera in CSS pixels, origin at the screen
-// centre (where the fingertips meet), y up.
-//
-// Performance: one renderer and context, no antialiasing, no post-processing
-// (glow is drawn in the shaders), pixel ratio capped (1.5 desktop, 1 phone),
-// low-poly geometry, one preallocated particle buffer, a handful of draw
-// calls, and nothing rendered once it's over.
+// Coordinates: the camera is placed so the z = 0 plane maps 1:1 to CSS
+// pixels, origin at the screen centre, y up - so a screen point (px, py) is
+// (px - w/2, h/2 - py, 0). The fingertips meet at the screen centre.
 
 import type * as THREE_NS from "three";
+import type { EffectComposer as EffectComposerT } from "three/addons/postprocessing/EffectComposer.js";
 
-type Kit = { THREE: typeof THREE_NS };
+type Kit = {
+  THREE: typeof THREE_NS;
+  EffectComposer: typeof import("three/addons/postprocessing/EffectComposer.js").EffectComposer;
+  RenderPass: typeof import("three/addons/postprocessing/RenderPass.js").RenderPass;
+  UnrealBloomPass: typeof import("three/addons/postprocessing/UnrealBloomPass.js").UnrealBloomPass;
+  OutputPass: typeof import("three/addons/postprocessing/OutputPass.js").OutputPass;
+};
 
-// three.js, loaded on demand after the page has rendered
+// three.js and its post-processing, loaded on demand (only the loader needs them)
 export async function loadThree(): Promise<Kit> {
-  return { THREE: await import("three") };
+  const [THREE, ec, rp, ub, op] = await Promise.all([
+    import("three"),
+    import("three/addons/postprocessing/EffectComposer.js"),
+    import("three/addons/postprocessing/RenderPass.js"),
+    import("three/addons/postprocessing/UnrealBloomPass.js"),
+    import("three/addons/postprocessing/OutputPass.js"),
+  ]);
+  return { THREE, EffectComposer: ec.EffectComposer, RenderPass: rp.RenderPass, UnrealBloomPass: ub.UnrealBloomPass, OutputPass: op.OutputPass };
 }
 
-// the reveal wave's ragged edge (px on a laptop screen) and its shape at
-// angle a, time t: -1..1. The shader uses the same formula, so the loader's
-// cut (a clip-path in MughalFrame) and the drawn outline line up.
+// how ragged the reveal wave's edge is (px on a laptop screen), and its shape
+// at angle a, time t (s): -1..1. The shader uses the same formula, so the
+// loader's cut (MughalFrame's clip-path) and the drawn outline line up.
 export const WAVE_RAG = 16;
 export const waveEdge = (a: number, t: number) =>
   0.55 * Math.sin(7 * a + 2.1 * t) + 0.3 * Math.sin(13 * a - 2.9 * t + 1.7) + 0.15 * Math.sin(23 * a + 4.3 * t + 0.6);
 
-// the timeline (s from the contact)
-const CONTRACT = 0.08; // the orb gathers itself
-const REVEAL_START = 0.36; // the site starts to show - exactly 360 ms after the touch
-const REVEAL_LEN = 1.25;
-const REVEAL_END = REVEAL_START + REVEAL_LEN;
-const END = REVEAL_END + 0.45;
-export const GOLDEN_DURATION = END;
-export const GOLDEN_REVEAL_AT = REVEAL_START;
+// the timeline (s)
+const SPARK_END = 0.06;
+const REVEAL_START = 0.21; // the site starts to show 0.21 s after the touch
+const REVEAL_END = REVEAL_START + 1.2;
+const END = REVEAL_END + 0.5;
+export const GOLDEN_DURATION = END; // s, the touch to the end
 
-// palette (sRGB, used as-is by the shaders)
-const hex = (h: string): [number, number, number] => [parseInt(h.slice(1, 3), 16) / 255, parseInt(h.slice(3, 5), 16) / 255, parseInt(h.slice(5, 7), 16) / 255];
-const DEEP = hex("#9C5A12");
-const GOLD = hex("#D9A23A");
-const AMBER = hex("#F2B544");
-const ORANGE = hex("#E8892B");
-const HOT = hex("#FFD98A"); // the brightest it gets - warm, never white
-
-const NOISE = /* glsl */ `
-float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453123); }
-float noise(vec2 p) {
-  vec2 i = floor(p), f = fract(p);
-  vec2 u = f * f * (3.0 - 2.0 * f);
-  return mix(mix(hash(i), hash(i + vec2(1, 0)), u.x), mix(hash(i + vec2(0, 1)), hash(i + vec2(1, 1)), u.x), u.y);
-}
-float fbm(vec2 p) {
-  float v = 0.0, a = 0.5;
-  for (int i = 0; i < 3; i++) { v += a * noise(p); p = p * 2.07 + 13.1; a *= 0.5; }
-  return v;
-}`;
+// palette: deep antique gold, amber, warm orange (sRGB; three converts)
+const GOLD = "#D9A23A";
+const AMBER = "#F2B544";
+const DEEP = "#B8741A";
+const ORANGE = "#E8892B";
 
 const GLSL_EDGE = /* glsl */ `
 float waveEdge(float a, float t) {
@@ -79,22 +70,19 @@ float waveEdge(float a, float t) {
 }`;
 
 export type Hooks = {
-  // the reveal wave each frame (radius and raggedness in px, time), for the
-  // loader's cut; null before the reveal
+  // the reveal's progress each frame: the wave's radius (px) and its edge
+  // raggedness (px) at time t, for the loader's cut; null once it's gone
   cut: (wave: { radius: number; rag: number; time: number } | null) => void;
-  mandala: (glow: number) => void; // 0..1: the explosion lighting the mandala
-  fade: (k: number) => void; // 0..1: the characters and mandala fading out
-  onReveal: () => void; // the reveal starts (contact + 0.36 s)
-  onDone: () => void; // over; GPU resources released
+  // 0..1: how lit-up the mandala is
+  mandala: (glow: number) => void;
+  onReveal: () => void; // the wave starts (the site begins to show)
+  onDone: () => void; // all over; GPU resources released
 };
 
-type Timeline = ReturnType<typeof import("gsap").gsap.timeline>;
-
 export type GoldenReveal = {
-  setCharge: (k: number) => void; // before the touch: 0 far apart .. 1 touching
-  // at the touch; `scrub`: the timeline starts paused and nothing is torn down
-  // at the end, so it can be moved to any moment (the loader preview)
-  play: (hooks: Hooks, opts?: { scrub?: boolean }) => Timeline;
+  // `scrub`: the timeline starts paused and is never torn down at the end,
+  // so it can be moved to any moment (the loader preview); returns it
+  play: (hooks: Hooks, opts?: { scrub?: boolean }) => ReturnType<typeof import("gsap").gsap.timeline>;
   resize: (w: number, h: number) => void;
   dispose: () => void;
 };
@@ -103,269 +91,202 @@ export function createGoldenReveal(kit: Kit, canvas: HTMLCanvasElement, width: n
   const { THREE } = kit;
   let renderer: THREE_NS.WebGLRenderer;
   try {
-    renderer = new THREE.WebGLRenderer({ canvas, alpha: true, premultipliedAlpha: true, antialias: false, powerPreference: "high-performance" });
+    renderer = new THREE.WebGLRenderer({ canvas, alpha: true, premultipliedAlpha: true, antialias: true, powerPreference: "high-performance" });
   } catch {
     return null;
   }
   let w = width, h = height;
-  const mobile = Math.min(w, h) < 600;
-  const pr = Math.min(mobile ? 1 : 1.5, window.devicePixelRatio || 1);
+  const pr = Math.min(2, window.devicePixelRatio || 1);
   renderer.setPixelRatio(pr);
   renderer.setSize(w, h, false);
   renderer.setClearColor(0x000000, 0);
 
   const far = () => Math.hypot(w, h) / 2; // centre to the corners
-  const S = () => far() / 900; // explosion sizes: tuned for a laptop screen
-  // the orb's size follows the mandala (51% of the shorter side): about 40 px
-  // across at the start and ~115 px at the touch on a 1536-wide screen
-  const U = () => (Math.min(w, h) * 0.512) / 442;
-  const orbR0 = () => 20 * U(), orbR1 = () => 58 * U();
+  const S = () => far() / 900; // sizes are tuned for a laptop screen
 
+  // --- scene, and a camera that makes z = 0 pixel-exact
   const scene = new THREE.Scene();
-  const camera = new THREE.OrthographicCamera(-w / 2, w / 2, h / 2, -h / 2, -5000, 5000);
-  camera.position.z = 1000;
+  const FOV = 35;
+  const camera = new THREE.PerspectiveCamera(FOV, w / h, 1, 20000);
+  const camZ = () => h / 2 / Math.tan(((FOV / 2) * Math.PI) / 180);
+  const placeCamera = () => {
+    camera.aspect = w / h;
+    camera.position.set(0, 0, camZ());
+    camera.lookAt(0, 0, 0);
+    camera.updateProjectionMatrix();
+  };
+  placeCamera();
+
+  // --- bloom. UnrealBloomPass writes alpha 1 everywhere from its blur, which
+  // would make the whole canvas opaque; its blur is patched to carry the
+  // real alpha, so the canvas stays see-through except where it glows.
+  const composer: EffectComposerT = new kit.EffectComposer(renderer, new THREE.WebGLRenderTarget(w * pr, h * pr, { type: THREE.HalfFloatType }));
+  composer.setPixelRatio(pr);
+  composer.setSize(w, h);
+  composer.addPass(new kit.RenderPass(scene, camera, undefined, new THREE.Color(0x000000), 0));
+  const bloom = new kit.UnrealBloomPass(new THREE.Vector2(w, h), 0.55, 0.35, 0.18);
+  for (const m of bloom.separableBlurMaterials) {
+    m.fragmentShader = m.fragmentShader
+      .replace("vec3 diffuseSum = texture2D( colorTexture, vUv ).rgb * weightSum;", "vec4 diffuseSum = texture2D( colorTexture, vUv ) * weightSum;")
+      .replace("vec3 sample1 = texture2D( colorTexture, vUv + uvOffset ).rgb;", "vec4 sample1 = texture2D( colorTexture, vUv + uvOffset );")
+      .replace("vec3 sample2 = texture2D( colorTexture, vUv - uvOffset ).rgb;", "vec4 sample2 = texture2D( colorTexture, vUv - uvOffset );")
+      .replace("gl_FragColor = vec4(diffuseSum/weightSum, 1.0);", "gl_FragColor = diffuseSum/weightSum;");
+    m.needsUpdate = true;
+  }
+  composer.addPass(bloom);
+  composer.addPass(new kit.OutputPass());
 
   const disposables: { dispose: () => void }[] = [];
   const keep = <T extends { dispose: () => void }>(x: T) => (disposables.push(x), x);
-  const v3 = (c: [number, number, number]) => new THREE.Vector3(...c);
+  const col = (c: string) => new THREE.Color(c);
 
-  // ---------------------------------------------------------------- the orb
-  const orb = new THREE.Group();
-  scene.add(orb);
-
-  // A. the core: a sphere lit from inside - bright gold at its heart, amber
-  // to dark gold at the rim, with energy flowing through it
-  const coreMat = keep(
-    new THREE.ShaderMaterial({
-      uniforms: { uTime: { value: 0 }, uBright: { value: 0.5 }, uFlow: { value: 1 }, uDeep: { value: v3(DEEP) }, uAmber: { value: v3(AMBER) }, uHot: { value: v3(HOT) }, uAlpha: { value: 1 } },
-      vertexShader: /* glsl */ `
-        varying vec3 vN; varying vec3 vP;
-        void main() { vN = normalize(normalMatrix * normal); vP = position; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
-      fragmentShader: /* glsl */ `
-        uniform float uTime, uBright, uFlow, uAlpha; uniform vec3 uDeep, uAmber, uHot;
-        varying vec3 vN; varying vec3 vP;
-        ${NOISE}
-        void main() {
-          float nz = clamp(vN.z, 0.0, 1.0);
-          vec2 uv = vec2(atan(vP.z, vP.x) * 1.3, vP.y * 2.2);
-          float f = fbm(uv * 1.6 + vec2(uTime * 0.45 * uFlow, -uTime * 0.3 * uFlow));
-          float f2 = fbm(uv * 3.1 - vec2(uTime * 0.7 * uFlow, uTime * 0.2));
-          float t = pow(nz, 1.3);
-          vec3 c = mix(uDeep, uAmber, smoothstep(0.0, 0.7, t));
-          c = mix(c, uHot, pow(t, 3.0) * (0.45 + 0.55 * uBright) * (0.75 + 0.5 * f));
-          c += uAmber * smoothstep(0.55, 0.85, f2) * 0.28 * (0.5 + uBright);   // flowing streaks
-          // a soft, translucent rim (energy, not a solid ball)
-          float a = uAlpha * smoothstep(0.0, 0.55, nz) * (0.7 + 0.3 * f);
-          gl_FragColor = vec4(c * a, a);
-        }`,
-      transparent: true,
-      premultipliedAlpha: true,
-      depthWrite: false,
-    }),
-  );
-  const core = new THREE.Mesh(keep(new THREE.SphereGeometry(1, 28, 20)), coreMat);
-  orb.add(core);
-
-  // B. the shell: translucent energy, bright at its edges (Fresnel), noise
-  // drifting over it and its surface gently wobbling
-  const shellMat = keep(
-    new THREE.ShaderMaterial({
-      uniforms: { uTime: { value: 0 }, uPower: { value: 0.5 }, uAmber: { value: v3(AMBER) }, uOrange: { value: v3(ORANGE) }, uHot: { value: v3(HOT) }, uAlpha: { value: 1 } },
-      vertexShader: /* glsl */ `
-        uniform float uTime; varying vec3 vN; varying vec3 vP;
-        void main() {
-          vec3 p = position;
-          p += normal * 0.045 * (sin(position.x * 5.0 + uTime * 2.1) + sin(position.y * 6.0 - uTime * 1.7) + sin(position.z * 4.0 + uTime * 2.6));
-          vN = normalize(normalMatrix * normal); vP = position;
-          gl_Position = projectionMatrix * modelViewMatrix * vec4(p, 1.0);
-        }`,
-      fragmentShader: /* glsl */ `
-        uniform float uTime, uPower, uAlpha; uniform vec3 uAmber, uOrange, uHot;
-        varying vec3 vN; varying vec3 vP;
-        ${NOISE}
-        void main() {
-          float fres = pow(1.0 - abs(vN.z), 2.4);
-          vec2 uv = vec2(atan(vP.z, vP.x) * 1.5, vP.y * 2.5);
-          float n = fbm(uv * 1.4 + vec2(uTime * 0.35, uTime * 0.22));
-          float bands = smoothstep(0.5, 0.8, n);
-          float a = (fres * (0.45 + 0.55 * n) * 0.9 + bands * 0.12) * (0.55 + 0.45 * uPower) * uAlpha;
-          vec3 c = mix(uOrange, mix(uAmber, uHot, fres), 0.5 + 0.5 * fres);
-          gl_FragColor = vec4(c * a, a);
-        }`,
-      transparent: true,
-      depthWrite: false,
-      blending: THREE.AdditiveBlending,
-    }),
-  );
-  const shell = new THREE.Mesh(keep(new THREE.SphereGeometry(1.38, 28, 20)), shellMat);
-  orb.add(shell);
-
-  // E. the outer glow: a soft golden-orange halo (a camera-facing quad)
+  // --- 1. the spark: a small glowing core + a point light at the contact
+  // point, and a soft amber light spilling round it (the light on the artwork)
+  const light = new THREE.PointLight(col(AMBER), 0, 0, 1.2);
+  light.position.set(0, 0, 90);
+  scene.add(light);
   const glowMat = keep(
     new THREE.ShaderMaterial({
-      uniforms: { uI: { value: 0.5 }, uOrange: { value: v3(ORANGE) }, uAmber: { value: v3(AMBER) } },
+      uniforms: { uColor: { value: col(AMBER) }, uCore: { value: col("#FFE7B0") }, uI: { value: 0 }, uHot: { value: 0 } },
       vertexShader: `varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
       fragmentShader: /* glsl */ `
-        varying vec2 vUv; uniform float uI; uniform vec3 uOrange, uAmber;
-        void main() {
+        varying vec2 vUv; uniform vec3 uColor; uniform vec3 uCore; uniform float uI; uniform float uHot;
+        void main(){
           float d = length(vUv - 0.5) * 2.0;
-          float g = exp(-d * 3.2) * 0.85 + exp(-d * 1.5) * 0.3;
-          float a = g * uI * smoothstep(1.0, 0.75, d);
-          gl_FragColor = vec4(mix(uOrange, uAmber, exp(-d * 4.0)) * a, a);
+          float halo = exp(-d * 4.0) * 0.6 + exp(-d * 1.6) * 0.18;
+          float core = exp(-d * 40.0) * uHot;
+          vec3 c = uColor * halo + uCore * core;
+          float a = clamp((halo + core) * uI, 0.0, 1.0);
+          gl_FragColor = vec4(c * uI, a);
         }`,
       transparent: true,
       depthWrite: false,
       blending: THREE.AdditiveBlending,
     }),
   );
-  const glow = new THREE.Mesh(keep(new THREE.PlaneGeometry(1, 1)), glowMat);
-  glow.position.z = -3; // behind the sphere
-  orb.add(glow);
+  const glowGeo = keep(new THREE.PlaneGeometry(1, 1));
+  const glow = new THREE.Mesh(glowGeo, glowMat);
+  glow.position.z = 2;
+  scene.add(glow);
 
-  // C. the orbital rings: thin ellipses (circles tilted in 3D), each turning
-  // at its own speed and direction
-  const ringGeo = (r: number) => {
-    const p: number[] = [], u: number[] = [];
-    for (let i = 0; i < 120; i++) {
-      const a = (i / 120) * Math.PI * 2;
-      p.push(Math.cos(a) * r, Math.sin(a) * r, 0);
-      u.push(i / 120);
+  // --- 2a. the explosion's particles: one Points object, motion on the GPU
+  const BURST = Math.round(Math.min(5000, 2200 + (w * h) / 900));
+  const burstGeo = keep(new THREE.BufferGeometry());
+  {
+    const dir = new Float32Array(BURST * 3), sp = new Float32Array(BURST), sz = new Float32Array(BURST), dl = new Float32Array(BURST), lf = new Float32Array(BURST), tone = new Float32Array(BURST);
+    for (let i = 0; i < BURST; i++) {
+      // random direction, flattened a little towards the screen plane
+      const u = Math.random() * 2 - 1, th = Math.random() * Math.PI * 2, r = Math.sqrt(1 - u * u);
+      dir[i * 3] = r * Math.cos(th);
+      dir[i * 3 + 1] = r * Math.sin(th);
+      dir[i * 3 + 2] = u * 0.7;
+      sp[i] = 260 + Math.pow(Math.random(), 1.6) * 1250; // most slow, a few fast
+      sz[i] = 2 + Math.pow(Math.random(), 3) * 9;
+      dl[i] = Math.random() * 0.12;
+      lf[i] = 0.7 + Math.random() * 1.1;
+      tone[i] = Math.random();
     }
-    const g = keep(new THREE.BufferGeometry());
-    g.setAttribute("position", new THREE.Float32BufferAttribute(p, 3));
-    g.setAttribute("aU", new THREE.Float32BufferAttribute(u, 1));
-    return g;
-  };
-  // each ring is a band of light flowing round: a bright head and a long
-  // fading tail (so it reads as moving energy, not a solid ring)
-  const ringMat = () =>
-    keep(
-      new THREE.ShaderMaterial({
-        uniforms: { uHead: { value: 0 }, uA: { value: 0.5 }, uC: { value: v3(AMBER) }, uHot: { value: v3(HOT) } },
-        vertexShader: `attribute float aU; varying float vU; void main(){ vU = aU; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
-        fragmentShader: /* glsl */ `
-          varying float vU; uniform float uHead, uA; uniform vec3 uC, uHot;
-          void main() {
-            float tail = fract(uHead - vU);           // 0 at the head, growing behind it
-            float k = pow(1.0 - tail, 2.6);
-            float a = (0.08 + 0.92 * k) * uA;
-            gl_FragColor = vec4(mix(uC, uHot, k * k) * a, a);
-          }`,
+    burstGeo.setAttribute("position", new THREE.BufferAttribute(new Float32Array(BURST * 3), 3));
+    burstGeo.setAttribute("aDir", new THREE.BufferAttribute(dir, 3));
+    burstGeo.setAttribute("aSpeed", new THREE.BufferAttribute(sp, 1));
+    burstGeo.setAttribute("aSize", new THREE.BufferAttribute(sz, 1));
+    burstGeo.setAttribute("aDelay", new THREE.BufferAttribute(dl, 1));
+    burstGeo.setAttribute("aLife", new THREE.BufferAttribute(lf, 1));
+    burstGeo.setAttribute("aTone", new THREE.BufferAttribute(tone, 1));
+  }
+  const pointUniforms = () => ({
+    uTime: { value: 0 },
+    uScale: { value: S() },
+    uPR: { value: pr },
+    uCamZ: { value: camZ() },
+    uFade: { value: 1 },
+    uGold: { value: col(GOLD) },
+    uAmber: { value: col(AMBER) },
+    uDeep: { value: col(DEEP) },
+  });
+  const burstMat = keep(
+    new THREE.ShaderMaterial({
+      uniforms: pointUniforms(),
+      vertexShader: /* glsl */ `
+        attribute vec3 aDir; attribute float aSpeed, aSize, aDelay, aLife, aTone;
+        uniform float uTime, uScale, uPR, uCamZ;
+        varying float vA; varying float vTone;
+        void main(){
+          float t = max(0.0, uTime - aDelay);
+          // drag: fast out, easing off
+          float k = 2.6;
+          float dist = aSpeed * uScale * (1.0 - exp(-k * t)) / k;
+          vec3 p = aDir * dist;
+          // a gentle swirl and a slow drift upwards, like dust in warm air
+          float sw = 0.35 * (1.0 - exp(-t * 1.5)) * (aTone - 0.5);
+          p.xy = mat2(cos(sw), -sin(sw), sin(sw), cos(sw)) * p.xy;
+          p.y += 26.0 * uScale * t * t;
+          vec4 mv = modelViewMatrix * vec4(p, 1.0);
+          gl_Position = projectionMatrix * mv;
+          float life = clamp(t / aLife, 0.0, 1.0);
+          vA = step(0.0001, uTime - aDelay) * pow(1.0 - life, 1.6) * smoothstep(0.0, 0.05, t);
+          vTone = aTone;
+          gl_PointSize = aSize * uScale * uPR * (uCamZ / -mv.z) * (1.0 - 0.4 * life);
+        }`,
+      fragmentShader: /* glsl */ `
+        uniform vec3 uGold, uAmber, uDeep; uniform float uFade;
+        varying float vA; varying float vTone;
+        void main(){
+          vec2 q = gl_PointCoord - 0.5;
+          float d = length(q) * 2.0;
+          float a = exp(-d * d * 3.5) * vA * uFade;
+          vec3 c = mix(mix(uDeep, uGold, smoothstep(0.0, 0.6, vTone)), uAmber, smoothstep(0.6, 1.0, vTone));
+          c += vec3(0.25, 0.18, 0.06) * exp(-d * d * 18.0); // a warm hot centre
+          gl_FragColor = vec4(c * a, a);
+        }`,
+      transparent: true,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending,
+    }),
+  );
+  const burst = new THREE.Points(burstGeo, burstMat);
+  burst.frustumCulled = false;
+  burst.visible = false;
+  scene.add(burst);
+
+  // --- 2b. concentric energy rings: thin gold tori, tilted for depth, lit by
+  // the point light
+  const ringGeo = keep(new THREE.TorusGeometry(1, 0.006, 12, 220));
+  const rings = [0, 1, 2].map((i) => {
+    const mat = keep(
+      new THREE.MeshStandardMaterial({
+        color: col(GOLD),
+        emissive: col(i === 1 ? ORANGE : AMBER),
+        emissiveIntensity: 1.4,
+        metalness: 0.85,
+        roughness: 0.3,
         transparent: true,
+        opacity: 0,
         depthWrite: false,
         blending: THREE.AdditiveBlending,
       }),
     );
-  const RINGS = [
-    { r: 1.75, tilt: [1.15, 0.25], spin: 0.9 },
-    { r: 2.0, tilt: [1.3, -0.55], spin: -0.65 },
-    { r: 2.25, tilt: [0.95, 0.9], spin: 0.5 },
-  ];
-  const rings = RINGS.map((cfg) => {
-    const geo = ringGeo(cfg.r);
-    const mat = ringMat();
-    const pivot = new THREE.Group(); // the ring's tilt
-    pivot.rotation.set(cfg.tilt[0], cfg.tilt[1], 0);
-    const spinner = new THREE.Group(); // its turning
-    spinner.add(new THREE.LineLoop(geo, mat));
-    pivot.add(spinner);
-    orb.add(pivot);
-    return { cfg, mat, pivot, spinner, angle: Math.random() * 6 };
+    const m = new THREE.Mesh(ringGeo, mat);
+    m.rotation.set([0.42, -0.3, 0.18][i], [-0.25, 0.38, -0.12][i], i * 0.7);
+    m.visible = false;
+    scene.add(m);
+    return { m, mat, delay: i * 0.09, reach: [0.62, 0.86, 1.08][i] };
   });
 
-  // thin electrical arcs: a few jagged lines round the shell, redrawn every
-  // so often (one preallocated buffer)
-  const ARCS = mobile ? 3 : 5, ARC_SEG = mobile ? 4 : 6;
-  const arcPos = new Float32Array(ARCS * ARC_SEG * 2 * 3);
-  const arcGeo = keep(new THREE.BufferGeometry());
-  arcGeo.setAttribute("position", new THREE.BufferAttribute(arcPos, 3));
-  const arcMat = keep(new THREE.LineBasicMaterial({ color: new THREE.Color(...HOT), transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false }));
-  const arcs = new THREE.LineSegments(arcGeo, arcMat);
-  arcs.frustumCulled = false;
-  orb.add(arcs);
-  let arcsAt = 0;
-  const redrawArcs = () => {
-    let k = 0;
-    for (let i = 0; i < ARCS; i++) {
-      const a0 = Math.random() * Math.PI * 2, el = (Math.random() - 0.5) * 1.2;
-      let prev: number[] | null = null;
-      for (let s = 0; s <= ARC_SEG; s++) {
-        const a = a0 + s * 0.09, r = 1.15 + Math.random() * 0.3, e = el + (Math.random() - 0.5) * 0.3;
-        const p = [Math.cos(a) * Math.cos(e) * r, Math.sin(e) * r, Math.sin(a) * Math.cos(e) * r];
-        if (prev) {
-          arcPos.set(prev, k);
-          arcPos.set(p, k + 3);
-          k += 6;
-        }
-        prev = p;
-      }
-    }
-    arcGeo.attributes.position.needsUpdate = true;
-  };
-  redrawArcs();
-
-  // ------------------------------------------------- D. the particles (one Points)
-  // orbiting motes, sparks running along the rings, the explosion's burst
-  // and the artwork's dissolve - all in one preallocated buffer, moved on
-  // the CPU (a few hundred points)
-  const MOTES = mobile ? 10 : 16, SPARKS = mobile ? 3 : 6, BURST = mobile ? 40 : 130, DISSOLVE = mobile ? 120 : 700;
-  const N = MOTES + SPARKS + BURST + DISSOLVE;
-  const pPos = new Float32Array(N * 3), pSize = new Float32Array(N), pAlpha = new Float32Array(N), pTone = new Float32Array(N);
-  const pGeo = keep(new THREE.BufferGeometry());
-  pGeo.setAttribute("position", new THREE.BufferAttribute(pPos, 3));
-  pGeo.setAttribute("aSize", new THREE.BufferAttribute(pSize, 1));
-  pGeo.setAttribute("aAlpha", new THREE.BufferAttribute(pAlpha, 1));
-  pGeo.setAttribute("aTone", new THREE.BufferAttribute(pTone, 1));
-  const pMat = keep(
-    new THREE.ShaderMaterial({
-      uniforms: { uPR: { value: pr }, uDeep: { value: v3(GOLD) }, uAmber: { value: v3(AMBER) }, uHot: { value: v3(HOT) } },
-      vertexShader: /* glsl */ `
-        attribute float aSize, aAlpha, aTone; uniform float uPR;
-        varying float vA; varying float vT;
-        void main() { vA = aAlpha; vT = aTone; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); gl_PointSize = aSize * uPR; }`,
-      fragmentShader: /* glsl */ `
-        uniform vec3 uDeep, uAmber, uHot; varying float vA; varying float vT;
-        void main() {
-          float d = length(gl_PointCoord - 0.5) * 2.0;
-          float a = exp(-d * d * 3.2) * vA;
-          vec3 c = mix(mix(uDeep, uAmber, smoothstep(0.0, 0.6, vT)), uHot, smoothstep(0.75, 1.0, vT) * 0.6);
-          c += uHot * exp(-d * d * 16.0) * 0.35;
-          gl_FragColor = vec4(c * a, a);
-        }`,
-      transparent: true,
-      depthWrite: false,
-      blending: THREE.AdditiveBlending,
-    }),
-  );
-  const points = new THREE.Points(pGeo, pMat);
-  points.frustumCulled = false;
-  points.renderOrder = 3;
-  scene.add(points);
-  // fixed per-particle randoms
-  const rnd = Array.from({ length: N }, () => [Math.random(), Math.random(), Math.random(), Math.random()]);
-  for (let i = 0; i < N; i++) pTone[i] = rnd[i][3];
-  let dissolveBase: Float32Array = new Float32Array(DISSOLVE * 2);
-  const placeDissolve = () => {
-    dissolveBase = new Float32Array(DISSOLVE * 2);
-    for (let i = 0; i < DISSOLVE; i++) {
-      const r = rnd[MOTES + SPARKS + BURST + i];
-      dissolveBase[i * 2] = (r[0] - 0.5) * w;
-      dissolveBase[i * 2 + 1] = (r[1] - 0.5) * h;
-    }
-  };
-
-  // ------------------------------------- the explosion's energy trails
+  // --- 2c. curved energy trails: spirals out from the contact point, drawn
+  // along their length (head bright, tail fading)
   const trailMat = keep(
     new THREE.ShaderMaterial({
-      uniforms: { uHead: { value: 0 }, uFade: { value: 1 }, uGold: { value: v3(GOLD) }, uAmber: { value: v3(AMBER) } },
+      uniforms: { uHead: { value: 0 }, uFade: { value: 1 }, uGold: { value: col(GOLD) }, uAmber: { value: col(AMBER) } },
       vertexShader: `varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
       fragmentShader: /* glsl */ `
         varying vec2 vUv; uniform float uHead, uFade; uniform vec3 uGold, uAmber;
-        void main() {
-          float x = vUv.x;
-          float on = smoothstep(uHead - 0.42, uHead, x) * step(x, uHead);
+        void main(){
+          float x = vUv.x;                    // 0 at the start, 1 at the end of the trail
+          float tail = 0.42;
+          float on = smoothstep(uHead - tail, uHead, x) * step(x, uHead);
           float head = exp(-(uHead - x) * 22.0) * step(x, uHead);
-          float a = (on * 0.5 + head * 0.9) * uFade;
+          float a = (on * 0.55 + head) * uFade;
           gl_FragColor = vec4(mix(uGold, uAmber, head) * a, a);
         }`,
       transparent: true,
@@ -374,31 +295,36 @@ export function createGoldenReveal(kit: Kit, canvas: HTMLCanvasElement, width: n
       side: THREE.DoubleSide,
     }),
   );
-  const trails = new THREE.Group();
-  trails.visible = false;
-  scene.add(trails);
+  const trailGroup = new THREE.Group();
+  trailGroup.visible = false;
+  scene.add(trailGroup);
   const buildTrails = () => {
-    trails.children.slice().forEach((c) => {
-      trails.remove(c);
+    trailGroup.children.slice().forEach((c) => {
+      trailGroup.remove(c);
       (c as THREE_NS.Mesh).geometry.dispose();
     });
-    if (mobile) return;
-    const s = S(), R = far() * 0.9;
-    for (let i = 0; i < 7; i++) {
-      const a0 = (i / 7) * Math.PI * 2 + rnd[i][0] * 0.5;
-      const turn = (rnd[i][1] < 0.5 ? -1 : 1) * (0.7 + rnd[i][2] * 0.8);
-      const reach = R * (0.55 + rnd[i][3] * 0.4);
+    const N = 11, s = S(), R = far() * 0.95;
+    for (let i = 0; i < N; i++) {
+      const a0 = (i / N) * Math.PI * 2 + Math.random() * 0.4;
+      const turn = (Math.random() < 0.5 ? -1 : 1) * (0.7 + Math.random() * 0.9);
+      const reach = R * (0.55 + Math.random() * 0.45);
+      const lift = (Math.random() - 0.5) * 260 * s;
       const pts: THREE_NS.Vector3[] = [];
       for (let k = 0; k <= 6; k++) {
-        const f = k / 6, r = reach * Math.pow(f, 0.85), a = a0 + turn * f * f;
-        pts.push(new THREE.Vector3(Math.cos(a) * r, Math.sin(a) * r, 0));
+        const f = k / 6;
+        const r = reach * Math.pow(f, 0.85);
+        const a = a0 + turn * f * f;
+        pts.push(new THREE.Vector3(Math.cos(a) * r, Math.sin(a) * r, lift * Math.sin(f * Math.PI)));
       }
-      trails.add(new THREE.Mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), 90, 1.4 * s, 4, false), trailMat));
+      const geo = new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), 140, (1.1 + Math.random() * 1.1) * s, 6, false);
+      trailGroup.add(new THREE.Mesh(geo, trailMat));
     }
   };
+  buildTrails();
 
-  // ---------- the shockwave, energy rings, flash and reveal outline: one
-  // full-screen quad (screen space), drawn only after the touch
+  // --- 2d. the shockwave and 3. the reveal wave: one full-screen plane
+  // (screen space) drawing a soft distorted shock ring, and the reveal's
+  // thin golden outline along its ragged edge
   const waveMat = keep(
     new THREE.ShaderMaterial({
       uniforms: {
@@ -406,56 +332,40 @@ export function createGoldenReveal(kit: Kit, canvas: HTMLCanvasElement, width: n
         uTime: { value: 0 },
         uShock: { value: 0 },
         uShockA: { value: 0 },
-        uRings: { value: 0 },
-        uRingsA: { value: 0 },
-        uFlash: { value: 0 },
         uWave: { value: 0 },
         uRag: { value: WAVE_RAG },
         uWaveA: { value: 0 },
-        uScale: { value: 1 },
-        uGold: { value: v3(GOLD) },
-        uAmber: { value: v3(AMBER) },
-        uOrange: { value: v3(ORANGE) },
-        uHot: { value: v3(HOT) },
+        uScale: { value: S() },
+        uGold: { value: col(GOLD) },
+        uAmber: { value: col(AMBER) },
+        uOrange: { value: col(ORANGE) },
       },
-      vertexShader: `varying vec2 vUv; void main(){ vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }`,
+      vertexShader: `varying vec2 vUv; void main(){ vUv = uv; gl_Position = vec4(position.xy * 2.0, 0.0, 1.0); }`,
       fragmentShader: /* glsl */ `
         varying vec2 vUv;
-        uniform vec2 uRes; uniform float uTime, uShock, uShockA, uRings, uRingsA, uFlash, uWave, uRag, uWaveA, uScale;
-        uniform vec3 uGold, uAmber, uOrange, uHot;
+        uniform vec2 uRes; uniform float uTime, uShock, uShockA, uWave, uRag, uWaveA, uScale;
+        uniform vec3 uGold, uAmber, uOrange;
         ${GLSL_EDGE}
-        void main() {
+        void main(){
           vec2 p = (vUv - 0.5) * uRes; p.y = -p.y; // CSS px from the centre, y down
           float d = length(p), a = atan(p.y, p.x);
           vec3 c = vec3(0.0); float al = 0.0;
-          // the shockwave: a soft ring whose radius wavers (animated distortion)
+          // the shockwave: a soft ring whose radius wavers with the angle
           if (uShockA > 0.0) {
             float r = uShock * (1.0 + 0.035 * sin(a * 9.0 + uTime * 6.0) + 0.02 * sin(a * 17.0 - uTime * 9.0));
-            float x = (d - r) / (44.0 * uScale);
+            float x = (d - r) / (46.0 * uScale);
             float ring = exp(-x * x * 2.2) * (0.55 + 0.45 * smoothstep(0.0, -1.5, x));
-            c += mix(uOrange, uAmber, 0.5) * ring * 0.5 * uShockA; al += ring * 0.36 * uShockA;
-          }
-          // two thin energy rings racing out
-          if (uRingsA > 0.0) {
-            for (int i = 0; i < 2; i++) {
-              float r = uRings * (i == 0 ? 0.62 : 0.95) * length(uRes) * 0.5;
-              float x = (d - r) / (3.0 * uScale);
-              float line = exp(-x * x);
-              c += uAmber * line * 0.8 * uRingsA; al += line * 0.6 * uRingsA;
-            }
-          }
-          // the brief golden-orange flash of the release
-          if (uFlash > 0.0) {
-            float f = exp(-d / (230.0 * uScale)) * uFlash;
-            c += mix(uOrange, uHot, exp(-d / (70.0 * uScale))) * f * 0.95; al += f * 0.6;
+            c += mix(uOrange, uAmber, 0.5) * ring * 0.55 * uShockA;
+            al += ring * 0.4 * uShockA;
           }
           // the reveal wave's edge: a thin bright gold line and a soft glow
           if (uWaveA > 0.0 && uWave > 0.0) {
             float hr = uWave + uRag * waveEdge(a, uTime);
             float x = d - hr;
             float line = exp(-x * x / (2.2 * uScale * uScale));
-            float soft = exp(-max(x, 0.0) / (22.0 * uScale)) * step(0.0, x) * 0.35 + exp(-max(-x, 0.0) / (10.0 * uScale)) * step(x, 0.0) * 0.15;
-            c += (uAmber * line + uGold * soft) * uWaveA; al += (line * 0.85 + soft * 0.5) * uWaveA;
+            float soft = exp(-max(x, 0.0) / (22.0 * uScale)) * step(0.0, x) * 0.35 + exp(-max(-x, 0.0) / (10.0 * uScale)) * step(x, 0.0) * 0.18;
+            c += (uAmber * line * 1.1 + uGold * soft) * uWaveA;
+            al += (line * 0.9 + soft * 0.5) * uWaveA;
           }
           al = clamp(al, 0.0, 1.0);
           gl_FragColor = vec4(c, al);
@@ -466,238 +376,225 @@ export function createGoldenReveal(kit: Kit, canvas: HTMLCanvasElement, width: n
       blending: THREE.AdditiveBlending,
     }),
   );
-  const wave = new THREE.Mesh(keep(new THREE.PlaneGeometry(2, 2)), waveMat);
+  const waveGeo = keep(new THREE.PlaneGeometry(1, 1));
+  const wave = new THREE.Mesh(waveGeo, waveMat);
   wave.frustumCulled = false;
   wave.renderOrder = 5;
-  wave.visible = false;
   scene.add(wave);
 
-  // ------------------------------------------------------------- state
-  let charge = 0;
-  let tl: Timeline | null = null;
-  // what the timeline animates (all 0 = before the touch)
-  const st = { contract: 0, boom: 0, flash: 0, burst: 0, shock: 0, shockA: 0, erings: 0, eringsA: 0, trails: 0, mandala: 0, wave: 0, waveA: 0, art: 0, fade: 1 };
-  let hooks: Hooks | null = null;
+  // --- 3b. the artwork dissolving: particles spread over the whole screen,
+  // each set free as the wave passes it, then drifting off in 3D (towards
+  // the camera and out, turning as they go) and fading
+  let dissolveGeo = keep(new THREE.BufferGeometry());
+  const buildDissolve = () => {
+    const N = Math.round(Math.min(14000, (w * h) / 130));
+    const base = new Float32Array(N * 3), vel = new Float32Array(N * 3), sz = new Float32Array(N), spin = new Float32Array(N), tone = new Float32Array(N), life = new Float32Array(N);
+    for (let i = 0; i < N; i++) {
+      const x = (Math.random() - 0.5) * w, y = (Math.random() - 0.5) * h;
+      base[i * 3] = x;
+      base[i * 3 + 1] = y;
+      const d = Math.hypot(x, y) || 1, out = 40 + Math.random() * 160;
+      vel[i * 3] = (x / d) * out + (Math.random() - 0.5) * 90;
+      vel[i * 3 + 1] = (y / d) * out + (Math.random() - 0.5) * 90 + 30;
+      vel[i * 3 + 2] = 60 + Math.random() * 420; // up off the page, towards the camera
+      sz[i] = 1.6 + Math.pow(Math.random(), 2.5) * 5.5;
+      spin[i] = (Math.random() - 0.5) * 12;
+      tone[i] = Math.random();
+      life[i] = 0.55 + Math.random() * 0.7;
+    }
+    dissolveGeo.dispose();
+    dissolveGeo = new THREE.BufferGeometry();
+    dissolveGeo.setAttribute("position", new THREE.BufferAttribute(base, 3));
+    dissolveGeo.setAttribute("aVel", new THREE.BufferAttribute(vel, 3));
+    dissolveGeo.setAttribute("aSize", new THREE.BufferAttribute(sz, 1));
+    dissolveGeo.setAttribute("aSpin", new THREE.BufferAttribute(spin, 1));
+    dissolveGeo.setAttribute("aTone", new THREE.BufferAttribute(tone, 1));
+    dissolveGeo.setAttribute("aLife", new THREE.BufferAttribute(life, 1));
+    if (dissolve) dissolve.geometry = dissolveGeo;
+  };
+  const dissolveMat = keep(
+    new THREE.ShaderMaterial({
+      uniforms: { ...pointUniforms(), uWave: { value: 0 }, uRag: { value: WAVE_RAG }, uWaveSpeed: { value: 1 }, uTail: { value: 0 } },
+      vertexShader: /* glsl */ `
+        attribute vec3 aVel; attribute float aSize, aSpin, aTone, aLife;
+        uniform float uTime, uScale, uPR, uCamZ, uWave, uRag, uWaveSpeed, uTail;
+        varying float vA; varying float vTone; varying float vAng;
+        ${GLSL_EDGE}
+        void main(){
+          vec2 b = position.xy;
+          float a = atan(-b.y, b.x);
+          float edge = uWave + uRag * waveEdge(a, uTime);
+          // how long ago the wave passed this spot (s)
+          float age = (edge - length(b)) / uWaveSpeed + uTail;
+          float on = step(0.0, age);
+          age = max(age, 0.0);
+          // slowing as they drift (air drag)
+          float k = 1.8;
+          vec3 p = vec3(b, 0.0) + aVel * uScale * (1.0 - exp(-k * age)) / k;
+          vec4 mv = modelViewMatrix * vec4(p, 1.0);
+          gl_Position = projectionMatrix * mv;
+          float l = clamp(age / aLife, 0.0, 1.0);
+          vA = on * (1.0 - l) * (1.0 - l) * smoothstep(0.0, 0.04, age);
+          vTone = aTone;
+          vAng = aSpin * age;
+          gl_PointSize = aSize * uScale * uPR * (uCamZ / -mv.z);
+        }`,
+      fragmentShader: /* glsl */ `
+        uniform vec3 uGold, uAmber, uDeep; uniform float uFade;
+        varying float vA; varying float vTone; varying float vAng;
+        void main(){
+          // a turning golden flake: a soft diamond, spun by its own angle
+          vec2 q = gl_PointCoord - 0.5;
+          q = mat2(cos(vAng), -sin(vAng), sin(vAng), cos(vAng)) * q;
+          float d = abs(q.x) * 1.6 + abs(q.y) * 2.4;
+          float a = smoothstep(1.0, 0.35, d) * vA * uFade;
+          vec3 c = mix(mix(uDeep, uGold, smoothstep(0.0, 0.55, vTone)), uAmber, smoothstep(0.55, 1.0, vTone));
+          gl_FragColor = vec4(c * a, a);
+        }`,
+      transparent: true,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending,
+    }),
+  );
+  let dissolve: THREE_NS.Points | null = null;
+  buildDissolve();
+  dissolve = new THREE.Points(dissolveGeo, dissolveMat);
+  dissolve.frustumCulled = false;
+  dissolve.visible = false;
+  scene.add(dissolve);
+
+  // compile every shader now (before the touch), so the first frames don't stall
+  renderer.compile(scene, camera);
 
   const resize = (W: number, H: number) => {
     w = W;
     h = H;
     renderer.setSize(w, h, false);
-    camera.left = -w / 2;
-    camera.right = w / 2;
-    camera.top = h / 2;
-    camera.bottom = -h / 2;
-    camera.updateProjectionMatrix();
+    composer.setSize(w, h);
+    bloom.resolution.set(w, h);
+    placeCamera();
+    for (const m of [burstMat, dissolveMat]) {
+      m.uniforms.uScale.value = S();
+      m.uniforms.uCamZ.value = camZ();
+    }
     waveMat.uniforms.uRes.value.set(w, h);
-    placeDissolve();
+    waveMat.uniforms.uScale.value = S();
+    buildDissolve();
     buildTrails();
   };
-  resize(w, h);
 
-  // --------------------------------------------------------- every frame
-  let raf = 0, alive = true, last = performance.now(), spin = 0;
-  const v = new THREE.Vector3();
-  const frame = (now: number) => {
-    if (!alive) return;
-    const dt = Math.min(0.05, (now - last) / 1000);
-    last = now;
-    const T = now / 1000; // free-running, for the orb's own idle motion
-    const t = tl ? tl.time() : 0; // the timeline: seconds since the touch
-    const s = S(), k = charge;
-    const ease = k * k * (3 - 2 * k);
-
-    // the orb: size and liveliness follow the charge; at the touch it
-    // contracts, then releases and is gone
-    const contract = st.contract * (1 - st.boom);
-    const R = (orbR0() + (orbR1() - orbR0()) * ease) * (1 + 0.05 * Math.sin(T * 3.2)) * (1 - 0.18 * contract) * (1 + 1.4 * st.boom);
-    const orbA = 1 - st.boom;
-    orb.visible = orbA > 0.01;
-    orb.scale.setScalar(R);
-    spin += dt * (0.25 + 0.7 * k + 2.5 * st.contract);
-    coreMat.uniforms.uTime.value = T;
-    coreMat.uniforms.uFlow.value = 1 + 2.2 * k;
-    coreMat.uniforms.uBright.value = Math.min(1.25, 0.35 + 0.65 * k + 0.5 * st.contract);
-    coreMat.uniforms.uAlpha.value = orbA;
-    shellMat.uniforms.uTime.value = T * (1 + k);
-    shellMat.uniforms.uPower.value = k;
-    shellMat.uniforms.uAlpha.value = orbA;
-    shell.rotation.set(spin * 0.6, spin, spin * 0.35);
-    shell.scale.setScalar(1 - 0.22 * contract);
-    glow.scale.setScalar(6 + 2 * k);
-    glowMat.uniforms.uI.value = (0.5 + 0.6 * k + 0.5 * st.contract) * orbA;
-    rings.forEach((r, i) => {
-      r.angle += dt * r.cfg.spin * (1 + 1.6 * k);
-      r.spinner.rotation.z = r.angle;
-      r.pivot.scale.setScalar(1 - 0.65 * contract);
-      r.mat.uniforms.uHead.value = (r.angle / (Math.PI * 2)) * (r.cfg.spin > 0 ? 1 : -1) * 1.7;
-      r.mat.uniforms.uA.value = (0.45 + 0.2 * Math.sin(T * (1.3 + i * 0.4) + i) + 0.3 * k) * orbA;
-    });
-    const arcK = Math.min(1, Math.max(0, (k - 0.6) / 0.3));
-    if (arcK > 0 && now - arcsAt > 75) {
-      arcsAt = now;
-      redrawArcs();
-    }
-    arcGeo.setDrawRange(0, Math.round(arcK * ARCS) * ARC_SEG * 2);
-    arcMat.opacity = (0.35 + 0.4 * Math.random()) * arcK * orbA;
-    orb.updateMatrixWorld(true);
-
-    // the particles
-    let i = 0;
-    // orbiting motes, now and then drawn in towards the core
-    for (let m = 0; m < MOTES; m++, i++) {
-      const r = rnd[i];
-      const a = T * (0.6 + r[0] * 1.2) * (r[1] < 0.5 ? -1 : 1) + r[2] * 6.28;
-      const pull = 1 - (0.25 + 0.5 * k) * Math.max(0, Math.sin(T * (0.7 + r[3]) + r[0] * 6.28));
-      const dist = R * (1.7 + r[3] * 1.6) * pull * (1 - 0.5 * contract);
-      pPos[i * 3] = Math.cos(a) * dist;
-      pPos[i * 3 + 1] = Math.sin(a) * dist * (0.45 + r[1] * 0.4);
-      pPos[i * 3 + 2] = 5;
-      pSize[i] = (2 + r[0] * 2.5) * U() * (1 + 0.5 * k);
-      pAlpha[i] = (0.55 + 0.45 * Math.sin(T * 4 + r[2] * 9)) * orbA;
-    }
-    // sparks running along the rings
-    for (let sp = 0; sp < SPARKS; sp++, i++) {
-      const ring = rings[sp % rings.length], r = rnd[i];
-      const a = (T * (1.5 + r[0]) + r[1] * 6.28) * (ring.cfg.spin > 0 ? 1 : -1);
-      v.set(Math.cos(a) * ring.cfg.r, Math.sin(a) * ring.cfg.r, 0).applyMatrix4(ring.spinner.matrixWorld);
-      pPos[i * 3] = v.x;
-      pPos[i * 3 + 1] = v.y;
-      pPos[i * 3 + 2] = 6;
-      pSize[i] = (2.5 + r[2] * 2) * U();
-      pAlpha[i] = (0.3 + 0.7 * k) * (Math.sin(T * 9 + r[3] * 20) > 0.2 ? 1 : 0.25) * orbA;
-    }
-    // the burst
-    const tb = t - CONTRACT;
-    for (let b = 0; b < BURST; b++, i++) {
-      const r = rnd[i];
-      if (tb <= 0 || st.burst <= 0) {
-        pAlpha[i] = 0;
-        continue;
-      }
-      const a = r[0] * Math.PI * 2, sp = (260 + Math.pow(r[1], 1.6) * 1100) * s, kd = 2.6;
-      const life = 0.8 + r[2] * 1.1;
-      const dist = (sp * (1 - Math.exp(-kd * tb))) / kd;
-      pPos[i * 3] = Math.cos(a) * dist;
-      pPos[i * 3 + 1] = Math.sin(a) * dist * (0.8 + r[3] * 0.4) + 24 * s * tb * tb;
-      pPos[i * 3 + 2] = 4;
-      const l = Math.min(1, tb / life);
-      pSize[i] = (4 + Math.pow(r[3], 2.5) * 13) * s * (1 - 0.35 * l);
-      pAlpha[i] = Math.pow(1 - l, 1.6) * Math.min(1, tb / 0.04) * st.fade;
-    }
-    // the artwork dissolving along the reveal wave
-    const waveEnd = far() + WAVE_RAG * s * 2 + 30 * s;
-    const waveR = st.wave * waveEnd, waveSpeed = waveEnd / REVEAL_LEN;
-    for (let d = 0; d < DISSOLVE; d++, i++) {
-      const r = rnd[i];
-      const bx = dissolveBase[d * 2], by = dissolveBase[d * 2 + 1];
-      const dist = Math.hypot(bx, by) || 1;
-      const edge = waveR + WAVE_RAG * s * waveEdge(Math.atan2(-by, bx), t);
-      const age = st.wave > 0 ? (edge - dist) / waveSpeed + Math.max(0, t - REVEAL_END) : -1;
-      if (age <= 0) {
-        pAlpha[i] = 0;
-        continue;
-      }
-      const out = (40 + r[2] * 150) * s, kd = 1.8, f = (1 - Math.exp(-kd * age)) / kd;
-      pPos[i * 3] = bx + ((bx / dist) * out + (r[0] - 0.5) * 80 * s) * f;
-      pPos[i * 3 + 1] = by + ((by / dist) * out + (r[1] - 0.3) * 80 * s) * f;
-      pPos[i * 3 + 2] = 3;
-      const l = Math.min(1, age / (0.55 + r[3] * 0.6));
-      pSize[i] = (1.8 + Math.pow(r[3], 2.5) * 5) * s;
-      pAlpha[i] = (1 - l) * (1 - l) * Math.min(1, age / 0.04) * st.fade;
-    }
-    pGeo.attributes.position.needsUpdate = true;
-    pGeo.attributes.aSize.needsUpdate = true;
-    pGeo.attributes.aAlpha.needsUpdate = true;
-
-    // the explosion's trails, shockwave, rings, flash and the reveal wave
-    trails.visible = st.trails > 0 && st.trails < 1.4;
-    trailMat.uniforms.uHead.value = st.trails * 1.42;
-    trailMat.uniforms.uFade.value = (1 - Math.max(0, st.trails - 0.7) / 0.3) * st.fade;
-    wave.visible = t > 0;
-    const wu = waveMat.uniforms;
-    wu.uTime.value = t;
-    wu.uScale.value = s;
-    wu.uShock.value = st.shock * far() * 1.05;
-    wu.uShockA.value = st.shockA * st.fade;
-    wu.uRings.value = st.erings;
-    wu.uRingsA.value = st.eringsA * st.fade;
-    wu.uFlash.value = st.flash;
-    wu.uWave.value = waveR;
-    wu.uRag.value = WAVE_RAG * s;
-    wu.uWaveA.value = st.waveA * st.fade;
-
-    if (hooks && t > 0) {
-      hooks.cut(t >= REVEAL_START ? { radius: waveR, rag: WAVE_RAG * s, time: t } : null);
-      hooks.mandala(st.mandala);
-    }
-    if (hooks) hooks.fade(st.art);
-
-    renderer.render(scene, camera);
-    raf = requestAnimationFrame(frame);
-  };
-  raf = requestAnimationFrame(frame);
+  let raf = 0, alive = true;
+  let tl: ReturnType<typeof gsap.timeline> | null = null;
 
   const dispose = () => {
     if (!alive) return;
     alive = false;
     cancelAnimationFrame(raf);
     tl?.kill();
-    trails.children.forEach((c) => (c as THREE_NS.Mesh).geometry.dispose());
+    trailGroup.children.forEach((c) => (c as THREE_NS.Mesh).geometry.dispose());
+    dissolveGeo.dispose();
     disposables.forEach((d) => d.dispose());
+    bloom.dispose();
+    composer.dispose();
     renderer.dispose();
     renderer.forceContextLoss();
   };
 
-  const play = (h: Hooks, opts: { scrub?: boolean } = {}) => {
-    hooks = h;
-    let revealed = false;
-    const reveal = () => {
-      if (revealed) return; // once only
-      revealed = true;
-      h.onReveal();
+  const play = (hooks: Hooks, opts: { scrub?: boolean } = {}) => {
+    const s = S();
+    // everything the timeline animates
+    const st = { spark: 0, hot: 0, light: 0, rings: 0, trails: 0, shock: 0, shockA: 0, wave: 0, waveA: 0, mandala: 0, fade: 1 };
+    let revealStarted = false;
+    burst.visible = true;
+    trailGroup.visible = true;
+    rings.forEach((r) => (r.m.visible = true));
+    dissolve!.visible = true;
+    // the reveal wave's travel: from 0 to past the corners (raggedness included)
+    const waveEnd = far() + WAVE_RAG * s * 2 + 30 * s;
+    dissolveMat.uniforms.uWaveSpeed.value = waveEnd / (REVEAL_END - REVEAL_START);
+    dissolveMat.uniforms.uRag.value = WAVE_RAG * s;
+    waveMat.uniforms.uRag.value = WAVE_RAG * s;
+
+    const frame = () => {
+      if (!alive) return;
+      const t = tl ? tl.time() : 0; // the timeline is the one clock, so every part stays in step
+      // spark and light
+      const sparkSize = (30 + 170 * st.spark + 260 * st.light) * s;
+      glow.scale.set(sparkSize * 2, sparkSize * 2, 1);
+      glowMat.uniforms.uI.value = Math.max(st.spark, st.light) * st.fade;
+      glowMat.uniforms.uHot.value = st.hot;
+      light.intensity = st.light * 9e5 * s * s;
+      // particles
+      burstMat.uniforms.uTime.value = Math.max(0, t - SPARK_END);
+      burstMat.uniforms.uFade.value = st.fade;
+      // rings
+      rings.forEach((r) => {
+        const p = Math.min(1, Math.max(0, (st.rings * 1.0 - r.delay) / (1 - r.delay)));
+        const R = Math.max(1, far() * r.reach * p);
+        r.m.scale.set(R, R, R * 0.6);
+        r.m.rotation.z += 0.004;
+        r.mat.opacity = Math.sin(Math.PI * Math.min(1, p * 1.05)) * 0.9 * st.fade;
+      });
+      // trails
+      trailMat.uniforms.uHead.value = st.trails * 1.42;
+      trailMat.uniforms.uFade.value = (1 - Math.max(0, st.trails - 0.7) / 0.3) * st.fade;
+      // shockwave and the reveal wave
+      waveMat.uniforms.uTime.value = t;
+      waveMat.uniforms.uShock.value = st.shock * far() * 1.05;
+      waveMat.uniforms.uShockA.value = st.shockA * st.fade;
+      const waveR = st.wave * waveEnd;
+      waveMat.uniforms.uWave.value = waveR;
+      waveMat.uniforms.uWaveA.value = st.waveA * st.fade;
+      dissolveMat.uniforms.uTime.value = t;
+      dissolveMat.uniforms.uWave.value = waveR;
+      dissolveMat.uniforms.uTail.value = Math.max(0, t - REVEAL_END);
+      dissolveMat.uniforms.uFade.value = st.fade;
+      // the loader's cut follows the same edge
+      if (t >= REVEAL_START) {
+        if (!revealStarted) {
+          revealStarted = true;
+          hooks.onReveal();
+        }
+        hooks.cut({ radius: waveR, rag: WAVE_RAG * s, time: t });
+      } else hooks.cut(null);
+      // at 0 (before the touch, when scrubbing) the loader's own build-up owns the mandala
+      if (t > 0) hooks.mandala(st.mandala);
+      composer.render();
+      raf = requestAnimationFrame(frame);
     };
+
     tl = gsap.timeline({
       paused: !!opts.scrub,
       onComplete: () => {
         if (opts.scrub) return; // kept, so it can be moved back
-        h.cut(null);
-        dispose(); // stops the render loop and frees the GPU
-        h.onDone();
+        hooks.cut(null);
+        dispose(); // stops the loop and frees the GPU
+        hooks.onDone();
       },
     });
     tl
-      // 1. the orb gathers itself: rings and shell contract, the core peaks
-      .to(st, { contract: 1, duration: CONTRACT, ease: "power2.in" }, 0)
-      // 2. the release
-      .to(st, { boom: 1, duration: 0.28, ease: "power2.out" }, CONTRACT)
-      .to(st, { flash: 1, duration: 0.06, ease: "power2.out" }, CONTRACT)
-      .to(st, { flash: 0, duration: 0.4, ease: "power1.out" }, CONTRACT + 0.06)
-      .set(st, { burst: 1 }, CONTRACT)
-      .to(st, { shock: 1, duration: 0.75, ease: "power2.out" }, CONTRACT)
-      .fromTo(st, { shockA: 1 }, { shockA: 0, duration: 0.75, ease: "power1.in" }, CONTRACT)
-      .to(st, { erings: 1, duration: 0.9, ease: "power2.out" }, CONTRACT)
-      .fromTo(st, { eringsA: 1 }, { eringsA: 0, duration: 0.9, ease: "power1.in" }, CONTRACT)
-      .to(st, { trails: 1.4, duration: 1.1, ease: "power1.inOut" }, CONTRACT)
-      .to(st, { mandala: 1, duration: 0.12, ease: "power2.out" }, CONTRACT)
-      // 3. the website reveal, exactly 0.36 s after the touch
-      .call(reveal, [], REVEAL_START)
-      .to(st, { waveA: 1, duration: 0.12 }, REVEAL_START)
-      .to(st, { wave: 1, duration: REVEAL_LEN, ease: "power2.inOut" }, REVEAL_START)
-      .to(st, { art: 1, duration: 0.9, ease: "power1.in" }, REVEAL_START + 0.1)
-      .to(st, { mandala: 0, duration: 0.9, ease: "power1.in" }, REVEAL_START + 0.1)
-      // 4. what's left fades
+      // 1. the spark: a tiny core that swells a little and holds
+      .to(st, { spark: 1, hot: 1, light: 0.35, duration: SPARK_END, ease: "power2.out" }, 0)
+      // 2. the explosion
+      .to(st, { light: 1, duration: 0.12, ease: "power2.out" }, SPARK_END)
+      .to(st, { spark: 0.25, hot: 0.4, duration: REVEAL_START - SPARK_END, ease: "power2.out" }, SPARK_END)
+      .to(st, { rings: 1, duration: 1.0, ease: "power2.out" }, SPARK_END)
+      .to(st, { trails: 1, duration: 0.95, ease: "power1.inOut" }, SPARK_END)
+      .to(st, { shock: 1, duration: 0.75, ease: "power2.out" }, SPARK_END + 0.04)
+      .fromTo(st, { shockA: 1 }, { shockA: 0, duration: 0.75, ease: "power1.in" }, SPARK_END + 0.04)
+      .to(st, { mandala: 1, duration: REVEAL_START - SPARK_END, ease: "power2.out" }, SPARK_END)
+      .to(st, { mandala: 0, duration: REVEAL_END - REVEAL_START, ease: "power1.in" }, REVEAL_START)
+      // 3. the reveal
+      .to(st, { waveA: 1, duration: 0.15 }, REVEAL_START)
+      .to(st, { wave: 1, duration: REVEAL_END - REVEAL_START, ease: "power2.inOut" }, REVEAL_START)
+      .to(st, { light: 0, spark: 0, hot: 0, duration: 0.6, ease: "power1.out" }, REVEAL_START)
+      // 4. fade out what's left
       .to(st, { fade: 0, duration: END - REVEAL_END, ease: "power1.in" }, REVEAL_END);
-    // development only: lets a test jump to any moment
+    // development only: lets a test jump to any moment (window.__goldenTl.pause(seconds))
     if (process.env.NODE_ENV !== "production") (window as unknown as { __goldenTl?: unknown }).__goldenTl = tl;
+    raf = requestAnimationFrame(frame);
     return tl;
   };
 
-  return {
-    setCharge: (k) => {
-      charge = Math.min(1, Math.max(0, k));
-    },
-    play,
-    resize,
-    dispose,
-  };
+  return { play, resize, dispose };
 }
