@@ -168,7 +168,7 @@ export default function MughalFrame({ progress = 0, reveal = LOADER_REVEAL, onRe
   // frame's lines
   const inset = t + GOLD_LINE + BLACK_LINE;
   const ps = 0.7 * Math.min(1, Math.max(150, w * 0.27) / PLANT.w); // plant scale (70% of the earlier size)
-  const pw = PLANT.w * ps, ph = PLANT.h * ps;
+  const pw = w < 425 ? 123.3 * (w / 390) : PLANT.w * ps, ph = w < 425 ? 85 * (w / 390) : PLANT.h * ps; // phones: as in the Figma phone frame
 
   // --- the Figma layout. Sizes scale by DS (the design fits the screen);
   // positions are measured from the edge each piece hugs, so on another
@@ -179,10 +179,30 @@ export default function MughalFrame({ progress = 0, reveal = LOADER_REVEAL, onRe
   const C = (x: number) => w / 2 + (x - DESIGN.w / 2) * DS; // from the centre
   const T = (y: number) => y * DS; // from the top edge
   const B = (y: number) => h - (DESIGN.h - y) * DS; // from the bottom edge
-  type Piece = { src: string; x: number; y: number; w: number; h: number; rotate?: number; shadow?: string; flip?: boolean };
+  type Piece = { src: string; x: number; y: number; w: number; h: number; rotate?: number; shadow?: string; flip?: boolean; px?: boolean };
   // exported layers (clouds, plant) already carry their rotation, flip and
   // shadow; their box is the layer's export bounds in design units
-  const pieces: Piece[] = [
+  // --- phones (below the site's tablet breakpoint, 425 px): the Figma phone
+  // frame ("iPhone 13 & 14 - 1", node 785:2457, 390x844), scaled to the
+  // screen's width; pieces near the top / bottom keep to that edge, the
+  // middle ones (mandala, characters, the middle cloud) to the centre
+  const phone = w < 425;
+  const MS = w / 390;
+  const pT = (y: number) => y * MS, pB = (y: number) => h - (844 - y) * MS, pM = (y: number) => h / 2 + (y - 422) * MS;
+  const pX = (x: number) => x * MS;
+  const phonePieces: Piece[] = [
+    // red flower plants: top centre (upside down) and bottom centre (mirrored)
+    { src: img("loader-flower-plant"), x: w / 2 - 272.2 * MS, y: pT(0), w: 544.4 * MS, h: 225 * MS, rotate: 180, px: true },
+    { src: img("loader-flower-plant"), x: w / 2 - 272.2 * MS, y: pB(619), w: 544.4 * MS, h: 225 * MS, flip: true, px: true },
+    // cloud 3 (left, its export includes its shadow)
+    { src: img("loader-cloud-left"), x: pX(-161.5), y: pT(161), w: 345 * MS, h: 145.3 * MS, px: true },
+    // cloud 2 (top right)
+    { src: "/images/loader-cloud-top-m.webp", x: pX(214), y: pT(67.7), w: 300.6 * MS, h: 151.3 * MS, px: true },
+    // cloud 1 (right, below Claude) and cloud 4 (bottom left), both mirrored
+    { src: "/images/loader-cloud-flat-m.webp", x: pX(178), y: pM(520), w: 384 * MS, h: 157 * MS, flip: true, shadow: "0 0 8px rgba(0,0,0,0.3)", px: true },
+    { src: "/images/loader-cloud-flat-m.webp", x: pX(-123), y: pB(700), w: 387 * MS, h: 175 * MS, flip: true, shadow: "0 0 10px rgba(0,0,0,0.2)", px: true },
+  ];
+  const pieces: Piece[] = phone ? phonePieces : [
     // red flower plant (40% opacity is baked in): bottom centre, and the same turned upside down at the top centre
     { src: img("loader-flower-plant"), x: C(262), y: B(645), w: 917, h: 379 },
     { src: img("loader-flower-plant"), x: C(262), y: T(0), w: 917, h: 379, rotate: 180 },
@@ -204,10 +224,17 @@ export default function MughalFrame({ progress = 0, reveal = LOADER_REVEAL, onRe
   // on tablets each is pushed a quarter of its width further into its corner (off the edge)
   const out = (fw: number) => (tablet ? fw * DS * 0.25 : 0);
   const ankit = { w: 701.03 * FK, h: 520.84 * FK, cx: fL(-52 + 707.24 / 2) - out(701.03 * FK), cy: fB(495.61 + 529.22 / 2), rotate: -0.69, shadow: "0 4px 12px rgba(0,0,0,0.5)", shoulder: [960 / 1455, 360 / 1081], tip: [1430 / 1455, 126 / 1081] };
+  // phones: Ankit middle left, Claude middle right (tilted 15 deg), from Figma
+  if (phone) {
+    Object.assign(ankit, { w: (374.446 * MS) / DS, h: (278.197 * MS) / DS, cx: w / 2 - 205.7 * MS, cy: h / 2 + 104.7 * MS, rotate: 1.73 });
+  }
   const claude = { w: 683.63 * FK, h: 437.3 * FK, cx: fR(718.27 + 810.44 / 2) + out(683.63 * FK), cy: fT(-40 + 718.11 / 2), rotate: -29.63, shadow: "0 4px 20px rgba(0,0,0,0.8)", shoulder: [480 / 1568, 375 / 1003], tip: [61 / 1568, 316 / 1003] };
+  if (phone) {
+    Object.assign(claude, { w: (385.735 * MS) / DS, h: (246.742 * MS) / DS, cx: w / 2 + 205.4 * MS, cy: h / 2 - 19.4 * MS, rotate: -15 });
+  }
   const r2 = (n: number) => Math.round(n * 100) / 100; // same numbers on server and client
   // the mandala, centred, its height 51% of the screen's shorter side
-  const mh = Math.min(w, h) * 0.512, mw = (mh * MANDALA.w) / MANDALA.h;
+  const mh = phone ? 332 * MS : Math.min(w, h) * 0.512, mw = (mh * MANDALA.w) / MANDALA.h;
   const mandala = { left: r2(w / 2 - mw / 2), top: r2(h / 2 - mh / 2), width: r2(mw), height: r2(mh) };
   const pieceImg = (p: Piece, i: number) => (
     // eslint-disable-next-line @next/next/no-img-element -- decorative
@@ -218,7 +245,14 @@ export default function MughalFrame({ progress = 0, reveal = LOADER_REVEAL, onRe
       aria-hidden="true"
       draggable={false}
       className="pointer-events-none absolute select-none"
-      style={{ left: r2(p.x), top: r2(p.y), width: r2(p.w * DS), height: r2(p.h * DS), transform: p.rotate ? `rotate(${p.rotate}deg)` : undefined }}
+      style={{
+        left: r2(p.x),
+        top: r2(p.y),
+        width: r2(p.px ? p.w : p.w * DS),
+        height: r2(p.px ? p.h : p.h * DS),
+        transform: [p.rotate ? `rotate(${p.rotate}deg)` : "", p.flip ? "scaleX(-1)" : ""].join(" ").trim() || undefined,
+        filter: p.shadow ? `drop-shadow(${p.shadow})` : undefined,
+      }}
     />
   );
   // Each figure sits where Figma puts it, then turns about its shoulder so
@@ -240,7 +274,7 @@ export default function MughalFrame({ progress = 0, reveal = LOADER_REVEAL, onRe
     delta = Math.atan2(Math.sin(delta), Math.cos(delta)); // -pi..pi
     // on tablets they only turn a little, keeping their flying pose (the
     // glide below still brings the fingertips together in the centre)
-    if (tablet) delta = Math.max(-MAX_TURN, Math.min(MAX_TURN, delta));
+    if (tablet || phone) delta = Math.max(-MAX_TURN, Math.min(MAX_TURN, delta));
     const angle = ((base + delta) * 180) / Math.PI;
     // the fingertip on screen after that turn
     const [rx, ry] = turn(ax, ay, delta);
@@ -423,16 +457,17 @@ export default function MughalFrame({ progress = 0, reveal = LOADER_REVEAL, onRe
       if (!done) setArtReady(true);
       done = true;
     };
-    const names = ["flying-ankit", "flying-claude", "loader-cloud-left", "loader-cloud-right", "loader-cloud-bottom", "loader-cloud-top", "loader-flower-plant", "corner-plant"];
-    const loads = names.map(
-      (n) =>
+    const names = w < 425 ? ["flying-ankit", "flying-claude", "loader-cloud-left", "loader-flower-plant", "corner-plant"] : ["flying-ankit", "flying-claude", "loader-cloud-left", "loader-cloud-right", "loader-cloud-bottom", "loader-cloud-top", "loader-flower-plant", "corner-plant"];
+    const extra = w < 425 ? ["/images/loader-cloud-top-m.webp", "/images/loader-cloud-flat-m.webp"] : [];
+    const loads = [...names.map(img), ...extra].map(
+      (src) =>
         new Promise<void>((res) => {
           const im = new Image();
           im.fetchPriority = "high";
           im.decoding = "async";
           im.onload = () => im.decode().then(() => res(), () => res());
           im.onerror = () => res();
-          im.src = img(n);
+          im.src = src;
         }),
     );
     Promise.all(loads).then(go);
