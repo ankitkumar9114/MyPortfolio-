@@ -6,12 +6,13 @@
 //
 // Timeline (seconds from the explosion, one GSAP timeline; the canvas reads
 // its time every frame):
-//   0.00-0.06  the spark flares
+//   0.00       the fingertips touch: sparks burst out, the rings and the
+//              shockwave expand, and the reveal starts at once
 //   0.06-      the burst: particles, 2 energy rings, a shockwave, trails;
 //              the mandala lights up
-//   0.10-1.30  the reveal: the wave (a ragged golden line) runs out to the
+//   0.00-1.20  the reveal: the wave (a ragged golden line) runs out to the
 //              corners; MughalFrame cuts the loader along the same edge
-//   1.30-1.80  what's left fades; then the loop stops
+//   1.20-1.70  what's left fades; then the loop stops
 //
 // Cheap on purpose: a few hundred particles drawn as one pre-made glow
 // sprite with additive ("lighter") blending, gradients for the glows, simple
@@ -29,7 +30,7 @@ export const waveEdge = (a: number, t: number) =>
 
 // the timeline (s from the explosion)
 const SPARK_END = 0.06;
-const REVEAL_START = 0.1; // the site starts to show 0.1 s after the explosion
+const REVEAL_START = 0; // the site starts to show the moment the fingertips touch
 const REVEAL_END = REVEAL_START + 1.2;
 const END = REVEAL_END + 0.5;
 export const GOLDEN_DURATION = END;
@@ -156,18 +157,7 @@ export function createGoldenReveal(canvas: HTMLCanvasElement, width: number, hei
     ctx.clearRect(0, 0, w, h);
     ctx.globalCompositeOperation = "lighter";
 
-    // the spark and its warm glow
-    const g = Math.max(st.spark, st.light) * st.fade;
-    if (g > 0.01) {
-      const R = (60 + 320 * st.spark + 420 * st.light) * s;
-      const gr = ctx.createRadialGradient(cx, cy, 0, cx, cy, R);
-      gr.addColorStop(0, rgba(HOT, 0.95 * g));
-      gr.addColorStop(0.12, rgba(AMBER, 0.75 * g));
-      gr.addColorStop(0.4, rgba(ORANGE, 0.25 * g));
-      gr.addColorStop(1, rgba(ORANGE, 0));
-      ctx.fillStyle = gr;
-      ctx.fillRect(cx - R, cy - R, R * 2, R * 2);
-    }
+    // (no glowing sphere at the touch: only the sparks, rings, shockwave and trails)
 
     // the shockwave: a soft ring racing out
     if (st.shockA > 0.01) {
