@@ -112,7 +112,9 @@ const goldenBurstReach = () => (burstReach ??= flightAt(GOLD_BURST_S, "golden").
 // `progressRef`: the same, read every frame without re-rendering (the site's
 // loader uses this, so loading progress never re-renders the whole frame).
 export default memo(MughalFrame);
-function MughalFrame({ progress = 0, progressRef, reveal = LOADER_REVEAL, onReveal, onRevealed90, onDone, scrub }: { progress?: number; progressRef?: { current: number }; reveal?: LoaderReveal; onReveal?: () => void; onRevealed90?: () => void; onDone?: () => void; scrub?: number }) {
+// (`scrubRef` instead of a prop, read every frame, so the preview playing
+// back never re-renders the frame.)
+function MughalFrame({ progress = 0, progressRef, reveal = LOADER_REVEAL, onReveal, onRevealed90, onDone, scrubRef }: { progress?: number; progressRef?: { current: number }; reveal?: LoaderReveal; onReveal?: () => void; onRevealed90?: () => void; onDone?: () => void; scrubRef?: { current: number } }) {
   const [size, setSize] = useState({ w: 1440, h: 900 });
   // Until the screen is measured, only the plain teal backdrop shows (no
   // images requested at the wrong size, nothing jumping into place); once
@@ -420,8 +422,10 @@ function MughalFrame({ progress = 0, progressRef, reveal = LOADER_REVEAL, onReve
     lastCut.current = wave.radius;
     const cx = W / 2, cy = H / 2, pts: string[] = [];
     const N = 64; // enough points for the wavy edge, without a heavy path
+    // a small opening is round; its waviness grows with it (no spiky star)
+    const rag = Math.min(wave.rag, wave.radius * 0.25);
     for (let i = 0; i < N; i++) {
-      const a = (i / N) * Math.PI * 2, r = Math.max(0, wave.radius + wave.rag * waveEdge(a, wave.time));
+      const a = (i / N) * Math.PI * 2, r = Math.max(0, wave.radius + rag * waveEdge(a, wave.time));
       pts.push(`${r2(cx + Math.cos(a) * r)} ${r2(cy + Math.sin(a) * r)}`);
     }
     root.style.clipPath = `path(evenodd, "M0 0H${W}V${H}H0Z M${pts.join("L")}Z")`;
@@ -465,7 +469,7 @@ function MughalFrame({ progress = 0, progressRef, reveal = LOADER_REVEAL, onReve
   // they touch, then hands over to the ending. The shown value eases
   // towards the real progress (never faster than the flight time), so jumps
   // in loading never make the figures jerk.
-  const scrubbing = scrub !== undefined;
+  const scrubbing = scrubRef !== undefined;
   // the artwork for this screen, loaded first and at high priority; the
   // flight starts once the characters and clouds are in (or after 4 s at most)
   useEffect(() => {
@@ -515,7 +519,7 @@ function MughalFrame({ progress = 0, progressRef, reveal = LOADER_REVEAL, onReve
     fly(ankitGlowRef.current, placed.ankit);
     fly(claudeGlowRef.current, placed.claude);
     const lead = anims[0];
-    let raf = 0, last = 0, follow = 0;
+    let raf = 0, last = 0, follow = 0, rate = 1;
     const tick = (now: number) => {
       const dt = last ? Math.min(0.05, (now - last) / 1000) : 0;
       last = now;
@@ -526,10 +530,13 @@ function MughalFrame({ progress = 0, progressRef, reveal = LOADER_REVEAL, onReve
       // real loading: if it's behind the flight, pause the flight until it catches up
       const target = Math.min(100, Math.max(0, progressRef ? progressRef.current : (targetRef.current ?? 0)));
       if (target > follow) follow = Math.min(target, follow + Math.max((target - follow) * dt * 4, 10 * dt));
-      const behind = follow < 100 && follow < shown + 0.5;
-      for (const a of anims) {
-        if (behind && a.playState === "running") a.pause();
-        else if (!behind && a.playState === "paused") a.play();
+      // (eased, not a hard stop: the speed slides towards how far ahead
+      // loading is, so the flight slows and picks up smoothly)
+      const want = follow >= 100 ? 1 : Math.min(1, Math.max(0, (follow - shown) / 12));
+      rate += (want - rate) * Math.min(1, dt * 6);
+      if (Math.abs(rate - (lead?.playbackRate ?? 1)) > 0.02 || (want === 1 && rate > 0.98 && lead?.playbackRate !== 1)) {
+        const r = want === 1 && rate > 0.98 ? 1 : Math.max(0.0001, rate);
+        for (const a of anims) a.updatePlaybackRate(r);
       }
       // the percentage and the mandala (cheap; the characters move by themselves)
       const n = String(Math.floor(shown + 1e-6));
@@ -557,8 +564,7 @@ function MughalFrame({ progress = 0, progressRef, reveal = LOADER_REVEAL, onReve
 
   // The scrubbed preview: show the moment `scrub` seconds from the start
   const endingRef = useRef<Tl | null>(null);
-  useEffect(() => {
-    if (scrub === undefined) return;
+  const applyScrub = (scrub: number) => {
     const { shown, endAt } = flightAt(scrub, reveal);
     explodedRef.current = scrub >= endAt;
     if (scrub < endAt) {
@@ -573,8 +579,22 @@ function MughalFrame({ progress = 0, progressRef, reveal = LOADER_REVEAL, onReve
       if (!endingRef.current) endingRef.current = startEnding(true);
       endingRef.current?.seek(scrub - endAt, false);
     }
+  };
+  useEffect(() => {
+    if (!scrubRef) return;
+    let raf = 0, lastT = -1;
+    const loop = () => {
+      const t = scrubRef.current;
+      if (t !== lastT) {
+        lastT = t;
+        applyScrub(t);
+      }
+      raf = requestAnimationFrame(loop);
+    };
+    raf = requestAnimationFrame(loop);
+    return () => cancelAnimationFrame(raf);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- the helpers only read refs and layout
-  }, [scrub, placed, reveal]);
+  }, [scrubRef, placed, reveal]);
 
   const corner = (left: number, top: number, flip: string) => (
     // eslint-disable-next-line @next/next/no-img-element -- decorative SVG

@@ -78,8 +78,9 @@ export function createGoldenReveal(canvas: HTMLCanvasElement, width: number, hei
     ctx.globalCompositeOperation = "lighter";
     ctx.beginPath();
     const N = 96;
+    const rag = Math.min(WAVE_RAG * s, r0 * 0.25); // a small edge is round; the waviness grows with it
     for (let i = 0; i <= N; i++) {
-      const a = (i / N) * Math.PI * 2, r = r0 + WAVE_RAG * s * waveEdge(a, t);
+      const a = (i / N) * Math.PI * 2, r = r0 + rag * waveEdge(a, t);
       const x = cx + Math.cos(a) * r, y = cy + Math.sin(a) * r;
       if (i) ctx.lineTo(x, y);
       else ctx.moveTo(x, y);

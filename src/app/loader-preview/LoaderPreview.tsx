@@ -57,7 +57,7 @@ export default function LoaderPreview() {
   return (
     <>
       <iframe src="/?noloader" title="Site" className="fixed inset-0 h-full w-full border-0" />
-      <MughalFrame key={`${reveal}-${run}`} reveal={reveal} progress={100} scrub={time} />
+      <MughalFrame key={`${reveal}-${run}`} reveal={reveal} progress={100} scrubRef={timeRef} />
       <div className="fixed left-1/2 top-3 z-[1100] flex w-[min(640px,calc(100vw-24px))] -translate-x-1/2 flex-col gap-2 rounded-2xl bg-black/75 p-2 font-[family-name:var(--font-manrope)] text-[13px] text-white shadow-lg backdrop-blur">
         <div className="flex justify-center gap-2">
           {(Object.keys(LOADER_REVEAL_NAMES) as LoaderReveal[]).map((r) => (
