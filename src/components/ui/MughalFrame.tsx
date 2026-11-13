@@ -42,6 +42,7 @@ const FLIGHT_MIN_S = 2.6; // the figures' flight time (0 -> 100%) for the mandal
 // characters fly in over GOLD_FLIGHT_S, so the touch is at 1.96 s
 // (when the page is already loaded)
 const ORB_HOLD_S = 0.5;
+const HOLD_FOR_FX_S = 3; // the longest the hands wait for three.js before the explosion
 const GOLD_FLIGHT_S = 1.46; // the fingertips meet at 1.96 s - inside the explosion (1.88 s), just before the site opens (1.98 s)
 const GOLD_BURST_S = 1.88; // s: the golden explosion starts (hands nearly touching); the reveal follows 0.1 s later
 
@@ -61,6 +62,15 @@ function flightStep(st: FlightState, elapsed: number, dt: number, target: number
   if (target > st.follow) st.follow = Math.min(target, st.follow + Math.max((target - st.follow) * dt * 4, 10 * dt));
   st.shown = Math.max(st.shown, Math.min(scheduled, st.follow));
   if (st.shown > 99.95) st.shown = 100;
+}
+
+// how much of a W x H screen a circle of radius r at its centre covers (0..1)
+function openShare(W: number, H: number, r: number) {
+  const n = 24;
+  let inside = 0;
+  for (let i = 0; i < n; i++)
+    for (let j = 0; j < n; j++) if (Math.hypot(((i + 0.5) / n - 0.5) * W, ((j + 0.5) / n - 0.5) * H) <= r) inside++;
+  return inside / (n * n);
 }
 
 // The figures' flight with everything already loaded (progress 100), as a
@@ -100,7 +110,7 @@ const goldenBurstReach = () => (burstReach ??= flightAt(GOLD_BURST_S, "golden").
 // `scrub` seconds from the start - before the touch worked out from
 // flightAt, after it by moving the ending's timeline - so any frame can be
 // reached, forwards or backwards; nothing is torn down at the end.
-export default function MughalFrame({ progress = 0, reveal = LOADER_REVEAL, onReveal, onDone, scrub }: { progress?: number; reveal?: LoaderReveal; onReveal?: () => void; onDone?: () => void; scrub?: number }) {
+export default function MughalFrame({ progress = 0, reveal = LOADER_REVEAL, onReveal, onRevealed90, onDone, scrub }: { progress?: number; reveal?: LoaderReveal; onReveal?: () => void; onRevealed90?: () => void; onDone?: () => void; scrub?: number }) {
   const [size, setSize] = useState({ w: 1440, h: 900 });
   // Until the screen is measured, only the plain teal backdrop shows (no
   // images requested at the wrong size, nothing jumping into place); once
@@ -116,10 +126,10 @@ export default function MughalFrame({ progress = 0, reveal = LOADER_REVEAL, onRe
   // the golden ending's warm light on the two characters
   const ankitGlowRef = useRef<HTMLDivElement>(null);
   const claudeGlowRef = useRef<HTMLDivElement>(null);
-  const cbRef = useRef({ onReveal, onDone });
+  const cbRef = useRef({ onReveal, onRevealed90, onDone });
   useEffect(() => {
-    cbRef.current = { onReveal, onDone };
-  }, [onReveal, onDone]);
+    cbRef.current = { onReveal, onRevealed90, onDone };
+  }, [onReveal, onRevealed90, onDone]);
   // the flying figures and the number are moved straight in the DOM, every
   // frame, from a smoothed progress value (no React re-render per frame)
   const ankitRef = useRef<HTMLImageElement>(null);
@@ -416,6 +426,11 @@ export default function MughalFrame({ progress = 0, reveal = LOADER_REVEAL, onRe
       pts.push(`${r2(cx + Math.cos(a) * r)} ${r2(cy + Math.sin(a) * r)}`);
     }
     root.style.clipPath = `path(evenodd, "M0 0H${W}V${H}H0Z M${pts.join("L")}Z")`;
+    // 90% of the screen open: tell the loader (scrolling is allowed from now)
+    if (cbRef.current.onRevealed90 && openShare(W, H, wave.radius) >= 0.9) {
+      cbRef.current.onRevealed90();
+      cbRef.current.onRevealed90 = undefined;
+    }
   };
   // the mandala lit up by the explosion (golden)
   const mandalaGlow = (g: number) => {
@@ -486,13 +501,23 @@ export default function MughalFrame({ progress = 0, reveal = LOADER_REVEAL, onRe
 
   useEffect(() => {
     if (scrubbing || !artReady) return;
-    let raf = 0, last = 0, start = 0;
+    let raf = 0, last = 0, start = 0, holdSince = 0;
     const st: FlightState = { shown: 0, follow: 0 };
     const tick = (now: number) => {
       if (!start) start = last = now;
       const dt = Math.min(0.05, (now - last) / 1000);
       last = now;
       flightStep(st, (now - start) / 1000, dt, Math.min(100, Math.max(0, targetRef.current ?? 0)), reveal);
+      // golden: if three.js is still downloading (slow first visit), hold
+      // just short of the explosion for it (up to HOLD_FOR_FX_S) rather than
+      // skipping the explosion
+      if (golden && !fx.current && !explodedRef.current) {
+        const holdAt = goldenBurstReach() * 100 - 2;
+        if (st.shown >= holdAt) {
+          holdSince ||= now;
+          if (now - holdSince < HOLD_FOR_FX_S * 1000) st.shown = holdAt;
+        }
+      }
       showFlight(st.shown);
       const endNow = golden ? st.shown >= goldenBurstReach() * 100 - 1e-6 : st.shown >= 100;
       if (endNow && !explodedRef.current) {

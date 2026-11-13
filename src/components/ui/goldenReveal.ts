@@ -33,7 +33,14 @@ type Kit = {
 };
 
 // three.js and its post-processing, loaded on demand (only the loader needs them)
-export async function loadThree(): Promise<Kit> {
+// (started once and shared, so the loader can begin the download the moment
+// the page starts)
+let threeLoad: Promise<Kit> | null = null;
+export function loadThree(): Promise<Kit> {
+  threeLoad ??= loadThreeNow();
+  return threeLoad;
+}
+async function loadThreeNow(): Promise<Kit> {
   const [THREE, ec, rp, ub, op] = await Promise.all([
     import("three"),
     import("three/addons/postprocessing/EffectComposer.js"),
