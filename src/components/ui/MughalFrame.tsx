@@ -30,6 +30,7 @@ const OUTER = "#710004"; // band gradient, outer edge
 const INNER = "#A0251E"; // band gradient, inner edge
 const GOLD = "#F6A225"; // the ornaments' gold
 const GOLD_LINE = 2; // px, the inner gold line
+const MAX_TURN = (22 * Math.PI) / 180; // tablets: the most a character turns from its pose
 const TOUCH = 0.5; // px each fingertip stops short of the centre at 100% (they touch)
 const BLACK_LINE = GOLD_LINE;
 const FLIGHT_MIN_S = 2.6; // the figures' flight time (0 -> 100%) for the mandala ending, with the page loaded
@@ -193,8 +194,17 @@ export default function MughalFrame({ progress = 0, reveal = LOADER_REVEAL, onRe
   // the flying figures (drawn over the frame, as in Figma): image size,
   // centre, Figma tilt, shadow, and where the shoulder and the pointing
   // fingertip are in the image (as fractions of its width / height)
-  const ankit = { w: 701.03, h: 520.84, cx: L(-52 + 707.24 / 2), cy: B(495.61 + 529.22 / 2), rotate: -0.69, shadow: "0 4px 12px rgba(0,0,0,0.5)", shoulder: [960 / 1455, 360 / 1081], tip: [1430 / 1455, 126 / 1081] };
-  const claude = { w: 683.63, h: 437.3, cx: R(718.27 + 810.44 / 2), cy: T(-40 + 718.11 / 2), rotate: -29.63, shadow: "0 4px 20px rgba(0,0,0,0.8)", shoulder: [480 / 1568, 375 / 1003], tip: [61 / 1568, 316 / 1003] };
+  // tablets (the site's tablet range, 425-1024 px wide): the characters 50%
+  // bigger, still hugging their corners (Ankit lower left, Claude upper
+  // right) - so they start partly off the edges of the frame
+  const tablet = w >= 425 && w <= 1024 && h > w; // portrait tablets
+  const FK = tablet ? 1.5 : 1; // the characters' scale
+  const fL = (x: number) => x * DS * FK, fB = (y: number) => h - (DESIGN.h - y) * DS * FK;
+  const fR = (x: number) => w - (DESIGN.w - x) * DS * FK, fT = (y: number) => y * DS * FK;
+  // on tablets each is pushed a quarter of its width further into its corner (off the edge)
+  const out = (fw: number) => (tablet ? fw * DS * 0.25 : 0);
+  const ankit = { w: 701.03 * FK, h: 520.84 * FK, cx: fL(-52 + 707.24 / 2) - out(701.03 * FK), cy: fB(495.61 + 529.22 / 2), rotate: -0.69, shadow: "0 4px 12px rgba(0,0,0,0.5)", shoulder: [960 / 1455, 360 / 1081], tip: [1430 / 1455, 126 / 1081] };
+  const claude = { w: 683.63 * FK, h: 437.3 * FK, cx: fR(718.27 + 810.44 / 2) + out(683.63 * FK), cy: fT(-40 + 718.11 / 2), rotate: -29.63, shadow: "0 4px 20px rgba(0,0,0,0.8)", shoulder: [480 / 1568, 375 / 1003], tip: [61 / 1568, 316 / 1003] };
   const r2 = (n: number) => Math.round(n * 100) / 100; // same numbers on server and client
   // the mandala, centred, its height 51% of the screen's shorter side
   const mh = Math.min(w, h) * 0.512, mw = (mh * MANDALA.w) / MANDALA.h;
@@ -226,12 +236,15 @@ export default function MughalFrame({ progress = 0, reveal = LOADER_REVEAL, onRe
     const shoulder = [f.cx + ox, f.cy + oy];
     const [ax, ay] = turn((f.tip[0] - f.shoulder[0]) * fw, (f.tip[1] - f.shoulder[1]) * fh, base);
     // extra turn so shoulder -> fingertip points at the screen centre
-    const delta = Math.atan2(h / 2 - shoulder[1], w / 2 - shoulder[0]) - Math.atan2(ay, ax);
+    let delta = Math.atan2(h / 2 - shoulder[1], w / 2 - shoulder[0]) - Math.atan2(ay, ax);
+    delta = Math.atan2(Math.sin(delta), Math.cos(delta)); // -pi..pi
+    // on tablets they only turn a little, keeping their flying pose (the
+    // glide below still brings the fingertips together in the centre)
+    if (tablet) delta = Math.max(-MAX_TURN, Math.min(MAX_TURN, delta));
     const angle = ((base + delta) * 180) / Math.PI;
-    // the fingertip on screen: an arm's length from the shoulder, towards the centre
-    const arm = Math.hypot(ax, ay), toCentre = Math.hypot(w / 2 - shoulder[0], h / 2 - shoulder[1]) || 1;
-    const tipX = shoulder[0] + (arm * (w / 2 - shoulder[0])) / toCentre;
-    const tipY = shoulder[1] + (arm * (h / 2 - shoulder[1])) / toCentre;
+    // the fingertip on screen after that turn
+    const [rx, ry] = turn(ax, ay, delta);
+    const tipX = shoulder[0] + rx, tipY = shoulder[1] + ry;
     // the full glide (at 100%): fingertip to the centre, stopping TOUCH px short
     const toC = Math.hypot(w / 2 - tipX, h / 2 - tipY);
     const k = toC > TOUCH ? (toC - TOUCH) / toC : 0;
