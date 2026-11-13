@@ -6,7 +6,6 @@ import { markPreloaderComplete } from "@/lib/preloaderSignal";
 import { getLenis } from "@/lib/lenisInstance";
 import MughalFrame from "./MughalFrame";
 import { collectImageUrls, prepareImage } from "./loaderAssets";
-import { loadThree } from "./goldenReveal";
 
 // The site's full-screen loader: the Mughal frame (MughalFrame), its
 // percentage driven by real loading - every image the first screens use on
@@ -85,8 +84,6 @@ export default function MughalLoader() {
       return () => cancelAnimationFrame(id);
     }
     lockScroll();
-    // the explosion's three.js: start downloading now
-    loadThree().catch(() => {});
     const startedAt = Date.now();
     let total = 0, settled = 0, ready = false, finished = false, cancelled = false;
     // real progress, held under 100 until everything has settled
