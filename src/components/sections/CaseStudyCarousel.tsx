@@ -214,8 +214,10 @@ export default function CaseStudyCarousel() {
 
     // mouse drag
     let down = false, dragged = false, x0 = 0, y0 = 0;
+    // only the cards themselves are draggable (not the empty wall around them)
+    const onCard = (e: Event) => !!(e.target as Element | null)?.closest?.("[data-slice]");
     const onDown = (e: PointerEvent) => {
-      if (e.pointerType !== "mouse" || e.button !== 0) return;
+      if (e.pointerType !== "mouse" || e.button !== 0 || !onCard(e)) return;
       const r = range();
       if (!inside(r, now())) return;
       down = true;
@@ -224,7 +226,12 @@ export default function CaseStudyCarousel() {
       y0 = now();
     };
     const onMove = (e: PointerEvent) => {
-      if (!down) return;
+      if (!down) {
+        // the grab hand only over a card
+        const want = e.pointerType === "mouse" && onCard(e) ? "grab" : "";
+        if (frame.style.cursor !== want) frame.style.cursor = want;
+        return;
+      }
       const dx = e.clientX - x0;
       if (!dragged && Math.abs(dx) < 5) return;
       if (!dragged) {
@@ -239,7 +246,7 @@ export default function CaseStudyCarousel() {
     const onUp = () => {
       if (!down) return;
       down = false;
-      frame.style.cursor = "";
+      frame.style.cursor = "grab";
       if (!dragged) return;
       // settle on a card: a drag past 15% of a card goes on to the next one
       // (or back to the previous one), like a swipe
@@ -290,7 +297,7 @@ export default function CaseStudyCarousel() {
           </li>
         ))}
       </ul>
-      <div ref={frameRef} aria-hidden="true" className="sticky top-0 h-screen w-full cursor-grab overflow-clip select-none">
+      <div ref={frameRef} aria-hidden="true" className="sticky top-0 h-screen w-full overflow-clip select-none">
         {/* the cards' lift shadow: on this shared parent (not each card),
             because every card is drawn as clipped slices that would cut a
             per-card shadow off; drop-shadow follows the curved outline */}
