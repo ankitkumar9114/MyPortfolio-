@@ -690,7 +690,7 @@ function MughalFrame({ progress = 0, progressRef, onReveal, onRevealed90, onDone
             <span key={i}>{c}</span>
           ))}
         </span>
-        <span aria-hidden="true" className="mt-[6px] grid font-[family-name:var(--font-arvo)] font-bold leading-none tabular-nums" style={{ fontSize: "clamp(40px, 5vw, 72px)" }}>
+        <span aria-hidden="true" className="mt-[6px] grid font-[family-name:var(--font-arvo)] text-[28px] font-bold leading-none tabular-nums tablet:text-[32px] desktop:text-[56px]">
           {/* an invisible "100%" sets the width; the live number sits centred on it */}
           <span className="invisible col-start-1 row-start-1 text-center">
             100<span className="ml-[2px] align-top text-[0.4em]">%</span>
