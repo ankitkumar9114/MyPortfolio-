@@ -22,6 +22,7 @@ export const waveEdge = (a: number, t: number) =>
 const REVEAL_START = 0; // the site starts to show straight away
 const REVEAL_END = REVEAL_START + 1.2;
 const END = REVEAL_END + 0.5;
+const GLOW_PEAK = 0.44; // s into the reveal when the glow is brightest
 export const GOLDEN_DURATION = END;
 
 // the edge's colours: antique gold glow, a warm hot line (never white)
@@ -132,8 +133,10 @@ export function createGoldenReveal(canvas: HTMLCanvasElement, width: number, hei
     });
     tl
       // the glow: the mandala and the characters light up at the touch, then fade
-      .to(st, { mandala: 1, duration: 0.2, ease: "power2.out" }, 0)
-      .to(st, { mandala: 0, duration: 0.9, ease: "power1.in" }, 0.3)
+      // the glow builds from the start of the reveal to its brightest at
+      // GLOW_PEAK (2.20 s from the loader's start), then fades
+      .to(st, { mandala: 1, duration: GLOW_PEAK, ease: "power1.inOut" }, 0)
+      .to(st, { mandala: 0, duration: 0.8, ease: "power1.in" }, GLOW_PEAK)
       // the reveal and its glowing edge
       .to(st, { edge: 1, duration: 0.12 }, REVEAL_START)
       .to(st, { wave: 1, duration: REVEAL_END - REVEAL_START, ease: "power2.inOut" }, REVEAL_START)
