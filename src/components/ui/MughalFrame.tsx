@@ -32,6 +32,8 @@ const GOLD = "#F6A225"; // the ornaments' gold
 const GOLD_LINE = 2; // px, the inner gold line
 // phones: up to this width (the biggest phones, e.g. iPhone Pro Max, are 430 px)
 const PHONE_MAX_W = 480;
+// phones: the characters start this much further out (Figma px) than in the Figma frame, then glide in
+const PHONE_OUT = 45;
 const MAX_TURN = (22 * Math.PI) / 180; // tablets: the most a character turns from its pose
 const TOUCH = 0.5; // px each fingertip stops short of the centre at 100% (they touch)
 const BLACK_LINE = GOLD_LINE;
@@ -229,11 +231,11 @@ export default function MughalFrame({ progress = 0, reveal = LOADER_REVEAL, onRe
   const ankit = { w: 701.03 * FK, h: 520.84 * FK, cx: fL(-52 + 707.24 / 2) - out(701.03 * FK), cy: fB(495.61 + 529.22 / 2), rotate: -0.69, shadow: "0 4px 12px rgba(0,0,0,0.5)", shoulder: [960 / 1455, 360 / 1081], tip: [1430 / 1455, 126 / 1081] };
   // phones: Ankit middle left, Claude middle right (tilted 15 deg), from Figma
   if (phone) {
-    Object.assign(ankit, { w: (374.446 * MS) / DS, h: (278.197 * MS) / DS, cx: w / 2 - 205.7 * MS, cy: h / 2 + 104.7 * MS, rotate: 1.73 });
+    Object.assign(ankit, { w: (374.446 * MS) / DS, h: (278.197 * MS) / DS, cx: w / 2 - (205.7 + PHONE_OUT) * MS, cy: h / 2 + 104.7 * MS, rotate: 1.73 });
   }
   const claude = { w: 683.63 * FK, h: 437.3 * FK, cx: fR(718.27 + 810.44 / 2) + out(683.63 * FK), cy: fT(-40 + 718.11 / 2), rotate: -29.63, shadow: "0 4px 20px rgba(0,0,0,0.8)", shoulder: [480 / 1568, 375 / 1003], tip: [61 / 1568, 316 / 1003] };
   if (phone) {
-    Object.assign(claude, { w: (385.735 * MS) / DS, h: (246.742 * MS) / DS, cx: w / 2 + 205.4 * MS, cy: h / 2 - 19.4 * MS, rotate: -15 });
+    Object.assign(claude, { w: (385.735 * MS) / DS, h: (246.742 * MS) / DS, cx: w / 2 + (205.4 + PHONE_OUT) * MS, cy: h / 2 - 19.4 * MS, rotate: -15 });
   }
   const r2 = (n: number) => Math.round(n * 100) / 100; // same numbers on server and client
   // the mandala, centred, its height 51% of the screen's shorter side
