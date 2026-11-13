@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 import { motion, useMotionValue, useMotionValueEvent, useReducedMotion, useScroll, useTransform, type Variants } from "framer-motion";
 import { getLenis } from "@/lib/lenisInstance";
+import { onPreloaderComplete } from "@/lib/preloaderSignal";
 // Chatai section commented out (replaced by the wire shelf):
 // import FanShadow from "./FanShadow";
 // import FridgeStickers from "./FridgeStickers";
@@ -288,6 +289,37 @@ function layout(scale: number, surface: number, star: number) {
   };
 }
 
+// The TV scene's pictures, fetched and decoded ahead of time - quietly, once
+// the loader is done - so a fast scroll never reaches the zoom before they're
+// ready (for a moment only the star, the dark backdrop and the screen would
+// show, with no TV in front of them).
+const TV_SCENE_IMAGES = ["/images/tv-with-table.webp", "/images/tv-table.webp", "/images/tv-glass.webp", "/images/tv-audience.webp", "/graphics/tv-star.svg"];
+const warmed: HTMLImageElement[] = []; // kept, so the browser keeps them decoded
+function useWarmTvImages(enabled: boolean) {
+  useEffect(() => {
+    if (!enabled) return;
+    let idle = 0, timer = 0;
+    const warm = () => {
+      for (const src of TV_SCENE_IMAGES) {
+        const im = new Image();
+        im.decoding = "async";
+        im.src = src;
+        im.decode().catch(() => {});
+        warmed.push(im);
+      }
+    };
+    const unsub = onPreloaderComplete(() => {
+      if (typeof window.requestIdleCallback === "function") idle = window.requestIdleCallback(warm, { timeout: 2000 });
+      else timer = window.setTimeout(warm, 300);
+    });
+    return () => {
+      unsub();
+      if (idle) window.cancelIdleCallback(idle);
+      window.clearTimeout(timer);
+    };
+  }, [enabled]);
+}
+
 export default function TvOnCabinet({ children }: { children: ReactNode }) {
   const [scale, setScale] = useState(DEFAULT_SCALE);
   const [surface, setSurface] = useState(DEFAULT_SURFACE);
@@ -304,6 +336,7 @@ export default function TvOnCabinet({ children }: { children: ReactNode }) {
   }, [stops]);
   const tv = useTvState();
   const phone = useSyncExternalStore(subscribePhone, () => window.matchMedia(PHONE_MQ).matches, () => false);
+  useWarmTvImages(!phone); // (phones have no TV scene)
   const tvOn = tv.on;
   const reduceMotion = useReducedMotion();
   const [glass, setGlass] = useState({

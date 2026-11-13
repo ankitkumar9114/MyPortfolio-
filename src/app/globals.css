@@ -477,3 +477,16 @@ body {
 [data-loader-root][data-ready] > * {
   opacity: 1;
 }
+
+/* TV "tuning" screen (TvScreen.tsx) while a video loads: a slow rolling bar
+   and a blinking readout */
+@keyframes tv-roll {
+  from { top: -25%; }
+  to { top: 105%; }
+}
+.tv-roll { animation: tv-roll 2.4s linear infinite; }
+@keyframes tv-blink {
+  0%, 60% { opacity: 1; }
+  70%, 100% { opacity: 0.25; }
+}
+.tv-blink { animation: tv-blink 1.1s steps(1) infinite; }
