@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useScroll } from "framer-motion";
 import { useCaseStudies } from "@/lib/caseStudies";
+import { getLenis } from "@/lib/lenisInstance";
 import CaseStudyCard, { CARD_WIDTH, CARD_HEIGHT } from "./CaseStudyCard";
 
 // Desktop "featured works" carousel. The section pins to the viewport and
@@ -174,6 +175,106 @@ export default function CaseStudyCarousel() {
     };
   });
 
+  // Sideways input moves the same carousel: a horizontal trackpad swipe
+  // (or shift + wheel) and dragging with the mouse both scroll the page
+  // through the carousel's own range - so they stay in step with normal
+  // vertical scrolling. They stop at the first / last card (past the ends,
+  // the page just scrolls on vertically as usual). A drag settles on the
+  // nearest card when released, and doesn't count as a click on a card.
+  useEffect(() => {
+    const wrap = wrapRef.current, frame = frameRef.current;
+    if (!wrap || !frame) return;
+    const st = { ...DEFAULT_CAROUSEL, ...saved };
+    const range = () => {
+      const VH = window.innerHeight, W = frame.clientWidth;
+      const track = makeTrack(W, VH, st);
+      const perCard = st.scrollPerCard * VH; // scroll per card
+      const start = wrap.getBoundingClientRect().top + window.scrollY; // first card centered
+      const end = start + (CARDS.length - 1) * perCard; // last card centered
+      return { start, end, perCard, k: perCard / Math.max(1, track.spacing) }; // k: page scroll per px moved sideways
+    };
+    const now = () => getLenis()?.targetScroll ?? window.scrollY;
+    const go = (y: number, smooth = false) => {
+      const lenis = getLenis();
+      if (lenis) lenis.scrollTo(y, smooth ? { duration: 0.6 } : { immediate: true });
+      else window.scrollTo({ top: y, behavior: smooth ? "smooth" : "auto" });
+    };
+    const inside = (r: ReturnType<typeof range>, y: number) => y >= r.start - 2 && y <= r.end + 2;
+
+    // horizontal trackpad swipes / shift + wheel
+    const onWheel = (e: WheelEvent) => {
+      const dx = e.shiftKey && !e.deltaX ? e.deltaY : e.deltaX;
+      if (!dx || Math.abs(dx) <= Math.abs(e.shiftKey ? 0 : e.deltaY)) return; // mostly vertical: normal scrolling
+      const r = range(), y = now();
+      if (!inside(r, y)) return;
+      const to = Math.min(r.end, Math.max(r.start, y + dx * r.k));
+      e.preventDefault(); // (also stops the browser's swipe-to-go-back while over the carousel)
+      if (Math.abs(to - y) > 0.5) go(to);
+    };
+
+    // mouse drag
+    let down = false, dragged = false, x0 = 0, y0 = 0;
+    const onDown = (e: PointerEvent) => {
+      if (e.pointerType !== "mouse" || e.button !== 0) return;
+      const r = range();
+      if (!inside(r, now())) return;
+      down = true;
+      dragged = false;
+      x0 = e.clientX;
+      y0 = now();
+    };
+    const onMove = (e: PointerEvent) => {
+      if (!down) return;
+      const dx = e.clientX - x0;
+      if (!dragged && Math.abs(dx) < 5) return;
+      if (!dragged) {
+        dragged = true;
+        frame.setPointerCapture(e.pointerId);
+        frame.style.cursor = "grabbing";
+      }
+      e.preventDefault();
+      const r = range();
+      go(Math.min(r.end, Math.max(r.start, y0 - dx * r.k)));
+    };
+    const onUp = () => {
+      if (!down) return;
+      down = false;
+      frame.style.cursor = "";
+      if (!dragged) return;
+      // settle on a card: a drag past 15% of a card goes on to the next one
+      // (or back to the previous one), like a swipe
+      const r = range(), moved = now() - y0;
+      const from = Math.round((y0 - r.start) / r.perCard);
+      const step = Math.abs(moved) > 0.15 * r.perCard ? Math.sign(moved) * Math.max(1, Math.round(Math.abs(moved) / r.perCard)) : 0;
+      const card = Math.min(CARDS.length - 1, Math.max(0, from + step));
+      go(r.start + card * r.perCard, true);
+    };
+    // a drag isn't a click on the card under the pointer
+    const onClick = (e: MouseEvent) => {
+      if (!dragged) return;
+      e.preventDefault();
+      e.stopPropagation();
+      dragged = false;
+    };
+    const noNativeDrag = (e: DragEvent) => e.preventDefault(); // images/links would start a browser drag
+    frame.addEventListener("wheel", onWheel, { passive: false });
+    frame.addEventListener("pointerdown", onDown);
+    frame.addEventListener("pointermove", onMove);
+    frame.addEventListener("pointerup", onUp);
+    frame.addEventListener("pointercancel", onUp);
+    frame.addEventListener("click", onClick, true);
+    frame.addEventListener("dragstart", noNativeDrag);
+    return () => {
+      frame.removeEventListener("wheel", onWheel);
+      frame.removeEventListener("pointerdown", onDown);
+      frame.removeEventListener("pointermove", onMove);
+      frame.removeEventListener("pointerup", onUp);
+      frame.removeEventListener("pointercancel", onUp);
+      frame.removeEventListener("click", onClick, true);
+      frame.removeEventListener("dragstart", noNativeDrag);
+    };
+  }, [CARDS.length, saved]);
+
   return (
     <div
       ref={wrapRef}
@@ -189,7 +290,7 @@ export default function CaseStudyCarousel() {
           </li>
         ))}
       </ul>
-      <div ref={frameRef} aria-hidden="true" className="sticky top-0 h-screen w-full overflow-clip">
+      <div ref={frameRef} aria-hidden="true" className="sticky top-0 h-screen w-full cursor-grab overflow-clip select-none">
         {/* the cards' lift shadow: on this shared parent (not each card),
             because every card is drawn as clipped slices that would cut a
             per-card shadow off; drop-shadow follows the curved outline */}
