@@ -53,7 +53,7 @@ export const waveEdge = (a: number, t: number) =>
 
 // the timeline (s)
 const SPARK_END = 0.06;
-const REVEAL_START = 0.11; // the site starts to show 0.11 s after the explosion (2.08 s from the start)
+const REVEAL_START = 0.1; // the site starts to show 0.1 s after the explosion (1.9 s from the start)
 const REVEAL_END = REVEAL_START + 1.2;
 const END = REVEAL_END + 0.5;
 export const GOLDEN_DURATION = END; // s, the touch to the end
@@ -500,16 +500,17 @@ export function createGoldenReveal(kit: Kit, canvas: HTMLCanvasElement, width: n
           float h = hash(id);
           float spark = step(0.78, h) * smoothstep(0.16, 0.0, length(f + (vec2(hash(id + 3.1), hash(id + 7.7)) - 0.5) * 0.6))
                       * (0.5 + 0.5 * sin(t * 5.0 + h * 40.0)) * smoothstep(0.95, 0.3, r);
-          float light = (body * (0.7 + 0.4 * fbm(p * 6.0 + t)) + core * 0.8 + rays + glow) * 0.85;
-          // warm gold, only the very centre near-white; sparkles amber-orange
-          vec3 c = mix(vec3(0.95, 0.62, 0.2), vec3(1.0, 0.84, 0.38), clamp(light, 0.0, 1.0));
-          c = mix(c, vec3(1.0, 0.95, 0.74), clamp(core * 0.8, 0.0, 1.0));
+          float light = (body * (0.7 + 0.4 * fbm(p * 6.0 + t)) + core * 0.8 + rays * 1.3 + glow) * 0.85;
+          // saturated golden yellow (rays and body), a small pale-yellow heart,
+          // amber-orange at the fringe; sparkles orange
+          vec3 c = mix(vec3(0.98, 0.6, 0.08), vec3(1.0, 0.86, 0.16), smoothstep(0.1, 0.8, light));
+          c = mix(c, vec3(1.0, 0.95, 0.6), clamp(core * core * 0.9, 0.0, 1.0));
           float sp = spark * 0.85;
-          c = (c * light + vec3(1.0, 0.66, 0.25) * sp) / max(light + sp, 0.001);
+          c = (c * light + vec3(1.0, 0.58, 0.12) * sp) / max(light + sp, 0.001);
           // fade out well inside the quad (no square edge)
           float al = clamp(light + sp, 0.0, 1.0) * uA * smoothstep(1.0, 0.65, r);
           c = pow(c, vec3(2.2)); // to linear: the render pipeline converts back to sRGB
-          gl_FragColor = vec4(c * al, al);
+          gl_FragColor = vec4(c * al * 0.82, al); // a little under full, so overlaps and bloom stay gold, not white
         }`,
       transparent: true,
       depthWrite: false,

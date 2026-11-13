@@ -39,7 +39,7 @@ const FLIGHT_MIN_S = 2.6; // the figures' flight time (0 -> 100%) for the mandal
 // (when the page is already loaded)
 const ORB_HOLD_S = 0.5;
 const GOLD_FLIGHT_S = 1.7;
-const GOLD_BURST_S = 1.97; // s: the golden explosion starts (hands almost touching)
+const GOLD_BURST_S = 1.8; // s: the golden explosion starts (hands nearly touching); the reveal follows at 1.9 s
 const ORB_BURST_S = 0.35; // the orb bursting outwards at the touch
 
 // One step of the figures' flight. Two limits, whichever is behind:
