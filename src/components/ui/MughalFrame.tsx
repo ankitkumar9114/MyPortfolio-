@@ -7,6 +7,7 @@ import { gsap, isReducedMotion } from "@/lib/gsap";
 import { LOADER_REVEAL, type LoaderReveal } from "@/lib/loaderReveal";
 import { createGoldenReveal, loadThree, waveEdge, type GoldenReveal } from "./goldenReveal";
 import { playMandalaReveal } from "./mandalaReveal";
+import { createLoaderEvents } from "@/lib/loaderEvents";
 
 // Frame for the new loader (border only, for now): the teal textured
 // background (loader-bg-teal.webp) inside a border made of two SVGs from
@@ -287,10 +288,12 @@ export default function MughalFrame({ progress = 0, reveal = LOADER_REVEAL, onRe
   // eslint-disable-next-line react-hooks/exhaustive-deps -- place() depends only on w and h
   const placed = useMemo(() => ({ ankit: place(ankit), claude: place(claude) }), [w, h]);
 
-  // The golden energy sequence (three.js + bloom, loaded in the background
-  // as the loader starts, shaders compiled up front, so it's ready by the
-  // touch)
+  // The golden ending's three.js orb and explosion, loaded in the background
+  // once the page has rendered (nothing waits for it). Until it's ready -
+  // or if WebGL isn't available - the CSS orb stands in; then the three.js
+  // orb takes over at the same charge.
   const fx = useRef<GoldenReveal | null>(null);
+  const chargeRef = useRef(0);
   useEffect(() => {
     if (reveal !== "golden") return; // the mandala ending needs no three.js
     let alive = true;
@@ -299,6 +302,9 @@ export default function MughalFrame({ progress = 0, reveal = LOADER_REVEAL, onRe
         const canvas = fxRef.current;
         if (!alive || !canvas) return;
         fx.current = createGoldenReveal(kit, canvas, window.innerWidth, window.innerHeight, gsap);
+        if (!fx.current) return;
+        fx.current.setCharge(chargeRef.current);
+        if (orbRef.current) orbRef.current.style.visibility = "hidden";
       })
       .catch(() => {});
     return () => {
@@ -322,6 +328,8 @@ export default function MughalFrame({ progress = 0, reveal = LOADER_REVEAL, onRe
       if (ankitGlowRef.current) ankitGlowRef.current.style.transform = transformAt(placed.ankit, reach);
       if (claudeGlowRef.current) claudeGlowRef.current.style.transform = transformAt(placed.claude, reach);
       buildUp(reach);
+      chargeRef.current = reach;
+      fx.current?.setCharge(reach);
     }
     const n = String(Math.floor(shown + 1e-6));
     if (numRef.current && numRef.current.textContent !== n) {
@@ -352,7 +360,7 @@ export default function MughalFrame({ progress = 0, reveal = LOADER_REVEAL, onRe
   // the orb bursting outwards at the touch (p: 0..1 over ORB_BURST_S)
   const orbBurst = (p: number) => {
     const orb = orbRef.current;
-    if (!orb) return;
+    if (!orb || fx.current) return; // the three.js orb does its own
     const e = 1 - Math.pow(1 - Math.min(1, Math.max(0, p)), 2);
     orb.style.transform = `scale(${r2(2.9 + 3.1 * e)})`;
     orb.style.opacity = String(r2(1 - e));
@@ -378,25 +386,43 @@ export default function MughalFrame({ progress = 0, reveal = LOADER_REVEAL, onRe
     for (const el of [mandalaImgRef.current, mandalaLineRef.current]) {
       if (!el) continue;
       el.style.opacity = String(r2(0.65 + 0.35 * g));
-      el.style.filter = g > 0.01 ? `brightness(${r2(1 + 0.9 * g)}) drop-shadow(0 0 ${r2(14 * g)}px rgba(242, 181, 68, ${r2(0.85 * g)}))` : "";
+      el.style.filter = g > 0.01 ? `brightness(${r2(1 + 0.4 * g)}) saturate(${r2(1 + 0.25 * g)})` : "";
     }
   };
   // start the ending (paused, and kept at the end, when scrubbing)
   type Tl = { time: () => number; seek: (t: number, suppress?: boolean) => unknown; duration: () => number };
-  const startEnding = (scrubbing: boolean): Tl | null => {
+  // the characters, their light, the mandala and the percentage fading out
+  // as the golden reveal opens (k 0..1)
+  const fadeArt = (k: number) => {
+    const o = String(r2(1 - k));
+    for (const el of [ankitRef.current, claudeRef.current, boxRef.current, statusRef.current]) if (el) el.style.opacity = o;
+    for (const el of [ankitGlowRef.current, claudeGlowRef.current]) if (el && k > 0) el.style.opacity = String(r2(0.95 * (1 - k)));
+  };
+  const startEnding = (scrubbing: boolean, ev?: ReturnType<typeof createLoaderEvents>): Tl | null => {
     const root = rootRef.current;
     const hooks = {
       cut,
       mandala: mandalaGlow,
-      onReveal: () => cbRef.current.onReveal?.(),
-      onDone: () => cbRef.current.onDone?.(),
+      fade: fadeArt,
+      onReveal: () => {
+        ev?.emit("websiteRevealTriggered");
+        cbRef.current.onReveal?.();
+      },
+      onDone: () => {
+        ev?.emit("loaderCompleted");
+        cbRef.current.onDone?.();
+      },
     };
     const els = { box: boxRef.current, litWrap: litWrapRef.current, litInner: litInnerRef.current, litLine: litLineRef.current, pulse: pulseRef.current, wave: ringRef.current };
     if (reveal === "mandala" && root && els.box && els.litWrap && els.litInner && els.litLine && els.pulse && els.wave) {
       const fade = [ankitRef.current, claudeRef.current, statusRef.current].filter((e): e is HTMLImageElement | HTMLDivElement => !!e);
       return playMandalaReveal({ root, box: els.box, litWrap: els.litWrap, litInner: els.litInner, litLine: els.litLine, pulse: els.pulse, wave: els.wave, fade }, gsap, hooks, isReducedMotion(), scrubbing);
     }
-    if (golden && fx.current) return fx.current.play(hooks, { scrub: scrubbing });
+    if (golden && fx.current) {
+      const tl = fx.current.play(hooks, { scrub: scrubbing });
+      ev?.emit("goldenExplosionTriggered");
+      return tl;
+    }
     if (scrubbing) return null; // three.js not ready yet: try again on the next move
     // no WebGL: a plain fade instead
     hooks.onReveal();
@@ -414,15 +440,23 @@ export default function MughalFrame({ progress = 0, reveal = LOADER_REVEAL, onRe
     if (scrubbing) return;
     let raf = 0, last = 0, start = 0;
     const st: FlightState = { shown: 0, follow: 0 };
+    const ev = createLoaderEvents();
     const tick = (now: number) => {
-      if (!start) start = last = now;
+      if (!start) {
+        start = last = now;
+        ev.emit("loaderStarted");
+        if (golden) ev.emit("energyOrbActivated");
+      }
       const dt = Math.min(0.05, (now - last) / 1000);
       last = now;
       flightStep(st, (now - start) / 1000, dt, Math.min(100, Math.max(0, targetRef.current ?? 0)), reveal);
       showFlight(st.shown);
+      if (st.shown > 0) ev.emit("charactersApproaching");
+      if (st.shown >= 64) ev.emit("energyBuilding"); // ~1.5 s in, with the page loaded
       if (st.shown >= 100) {
         // the touch: the orb bursts, the ending takes it from here
-        if (golden && orbRef.current) {
+        ev.emit("charactersTouched");
+        if (golden && orbRef.current && !fx.current) {
           const orb = orbRef.current, t0 = performance.now();
           const burst = (n: number) => {
             orbBurst((n - t0) / 1000 / ORB_BURST_S);
@@ -430,7 +464,7 @@ export default function MughalFrame({ progress = 0, reveal = LOADER_REVEAL, onRe
           };
           if (orb) requestAnimationFrame(burst);
         }
-        startEnding(false);
+        startEnding(false, ev);
         return;
       }
       raf = requestAnimationFrame(tick);
