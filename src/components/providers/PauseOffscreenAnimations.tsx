@@ -7,22 +7,42 @@ import { useEffect } from "react";
 // lights, the footer's phone and screen, …) and resumes them as it comes
 // back, so the phone isn't busy animating things nobody can see. Each direct
 // child of <main> is watched; while it's more than 200px outside the window
-// it gets data-offscreen, and globals.css sets animation-play-state: paused
-// on it and everything inside. Renders nothing.
+// it's paused by a rule in a <style> tag of our own (main > :nth-child(n)).
+// The sections' own attributes are never touched: some hydrate later (behind
+// Suspense), and an attribute added before then is a hydration mismatch.
+// Renders nothing.
 export default function PauseOffscreenAnimations() {
   useEffect(() => {
     const main = document.querySelector("main");
     if (!main || !("IntersectionObserver" in window)) return;
+    const style = document.createElement("style");
+    style.dataset.pauseOffscreen = "";
+    document.head.appendChild(style);
+    const off = new Set<Element>();
+    const update = () => {
+      const kids = Array.from(main.children);
+      const sel: string[] = [];
+      for (const el of off) {
+        const i = kids.indexOf(el);
+        if (i >= 0) sel.push(`main > :nth-child(${i + 1})`, `main > :nth-child(${i + 1}) *`);
+      }
+      style.textContent = sel.length ? `${sel.join(",")}{animation-play-state:paused!important}` : "";
+    };
     const io = new IntersectionObserver(
       (entries) => {
         for (const e of entries) {
-          if (e.isIntersecting) e.target.removeAttribute("data-offscreen");
-          else e.target.setAttribute("data-offscreen", "");
+          if (e.isIntersecting) off.delete(e.target);
+          else off.add(e.target);
         }
+        update();
       },
       { rootMargin: "200px 0px" },
     );
-    const watch = () => Array.from(main.children).forEach((el) => io.observe(el));
+    const watch = () => {
+      for (const el of off) if (el.parentElement !== main) off.delete(el);
+      Array.from(main.children).forEach((el) => io.observe(el));
+      update(); // positions may have shifted
+    };
     watch();
     // sections that mount later (e.g. a layout swapped for phones)
     const mo = new MutationObserver(watch);
@@ -30,7 +50,7 @@ export default function PauseOffscreenAnimations() {
     return () => {
       io.disconnect();
       mo.disconnect();
-      Array.from(main.children).forEach((el) => el.removeAttribute("data-offscreen"));
+      style.remove();
     };
   }, []);
   return null;

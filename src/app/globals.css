@@ -414,13 +414,6 @@ body {
   100% { filter: brightness(1); }
 }
 
-/* Sections out of view (see PauseOffscreenAnimations): their CSS animations
-   pause until they're back on screen. */
-[data-offscreen],
-[data-offscreen] * {
-  animation-play-state: paused !important;
-}
-
 /* Swipeable rows on phones (useSwipeableMarquee): scrollable, no scrollbar. */
 .no-scrollbar {
   scrollbar-width: none;
