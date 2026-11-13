@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import MughalFrame, { flightAt } from "@/components/ui/MughalFrame";
 import { GOLDEN_DURATION } from "@/components/ui/goldenReveal";
 import { LOADER_REVEAL, LOADER_REVEAL_NAMES, type LoaderReveal } from "@/lib/loaderReveal";
@@ -22,6 +22,9 @@ export default function LoaderPreview() {
     setTimeState(t);
   };
   const [playing, setPlaying] = useState(true);
+  // playing from the start runs the real loader (its flight on the compositor,
+  // exactly as on the site); pausing or dragging switches to frame-by-frame scrubbing
+  const [live, setLive] = useState(true);
   const { touchAt, endAt } = flightAt(0, reveal);
   const total = endAt + ENDING[reveal];
 
@@ -42,14 +45,25 @@ export default function LoaderPreview() {
     return () => cancelAnimationFrame(raf);
   }, [playing, total]);
 
+  // the live loader has finished: show its last frame (scrub mode, at the end)
+  const finishLive = useCallback(() => {
+    timeRef.current = total;
+    setTimeState(total);
+    setPlaying(false);
+    setLive(false);
+  }, [total]);
+
   const choose = (r: LoaderReveal) => {
     setReveal(r);
     setRun((n) => n + 1);
     setTime(0);
+    setLive(true);
     setPlaying(true);
   };
   const replay = () => {
+    setRun((n) => n + 1);
     setTime(0);
+    setLive(true);
     setPlaying(true);
   };
 
@@ -57,7 +71,11 @@ export default function LoaderPreview() {
   return (
     <>
       <iframe src="/?noloader" title="Site" className="fixed inset-0 h-full w-full border-0" />
-      <MughalFrame key={`${reveal}-${run}`} reveal={reveal} progress={100} scrubRef={timeRef} />
+      {live ? (
+        <MughalFrame key={`${reveal}-${run}-live`} reveal={reveal} progress={100} onDone={finishLive} />
+      ) : (
+        <MughalFrame key={`${reveal}-${run}-scrub`} reveal={reveal} progress={100} scrubRef={timeRef} />
+      )}
       <div className="fixed left-1/2 top-3 z-[1100] flex w-[min(640px,calc(100vw-24px))] -translate-x-1/2 flex-col gap-2 rounded-2xl bg-black/75 p-2 font-[family-name:var(--font-manrope)] text-[13px] text-white shadow-lg backdrop-blur">
         <div className="flex justify-center gap-2">
           {(Object.keys(LOADER_REVEAL_NAMES) as LoaderReveal[]).map((r) => (
@@ -78,7 +96,12 @@ export default function LoaderPreview() {
         <div className="flex items-center gap-3 px-2 pb-1">
           <button
             type="button"
-            onClick={() => (time >= total ? replay() : setPlaying((p) => !p))}
+            onClick={() => {
+              if (time >= total || time === 0) return replay();
+              // pausing (or playing on from a paused moment) scrubs frame by frame
+              setLive(false);
+              setPlaying((p) => !p);
+            }}
             className="w-[76px] shrink-0 rounded-full bg-white/15 px-2 py-1 font-semibold"
           >
             {playing ? "❚❚ Pause" : "▶ Play"}
@@ -96,6 +119,7 @@ export default function LoaderPreview() {
               value={time}
               onChange={(e) => {
                 setPlaying(false);
+                setLive(false);
                 setTime(Number(e.target.value));
               }}
               className="w-full accent-[#D9A23A]"

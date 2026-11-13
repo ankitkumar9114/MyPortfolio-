@@ -502,52 +502,59 @@ function MughalFrame({ progress = 0, progressRef, reveal = LOADER_REVEAL, onReve
   }, [measured, small]);
 
   // The live flight runs on the compositor (Web Animations on the two
-  // characters and their light layers): it stays smooth even while the page
-  // underneath is busy setting itself up. The loop below only reads where
-  // the flight is - for the percentage, the mandala and the explosion - and
-  // pauses the flight if real loading falls behind it.
+  // characters and their light layers), at a fixed smooth pace: it stays
+  // smooth even while the page underneath is busy. The characters hold still
+  // until both the opening pause (hold) is over and the page has loaded, then
+  // fly in one go - never sped up or slowed down by loading. The loop below
+  // only reads where the flight is (the percentage, the mandala, the reveal).
   useEffect(() => {
     if (scrubbing || !artReady) return;
     const hold = golden ? ORB_HOLD_S : 0, flight = golden ? GOLD_FLIGHT_S : FLIGHT_MIN_S;
-    const timing: KeyframeAnimationOptions = { duration: flight * 1000, delay: hold * 1000, easing: "cubic-bezier(0.37, 0, 0.63, 1)", fill: "both" };
+    const timing: KeyframeAnimationOptions = { duration: flight * 1000, easing: "cubic-bezier(0.37, 0, 0.63, 1)", fill: "both" };
     const anims: Animation[] = [];
     const fly = (el: Element | null, g: Placed) => {
-      if (el) anims.push(el.animate([{ transform: transformAt(g, 0) }, { transform: transformAt(g, 1) }], timing));
+      if (!el) return;
+      const a = el.animate([{ transform: transformAt(g, 0) }, { transform: transformAt(g, 1) }], timing);
+      a.pause(); // waits at the start until the flight begins
+      anims.push(a);
     };
     fly(ankitRef.current, placed.ankit);
     fly(claudeRef.current, placed.claude);
     fly(ankitGlowRef.current, placed.ankit);
     fly(claudeGlowRef.current, placed.claude);
     const lead = anims[0];
-    let raf = 0, last = 0, follow = 0, rate = 1;
+    let raf = 0, start = 0, last = 0, follow = 0, flying = false, p0 = 0, shownNum = 0;
     const tick = (now: number) => {
-      const dt = last ? Math.min(0.05, (now - last) / 1000) : 0;
+      if (!start) start = last = now;
+      const dt = Math.min(0.05, (now - last) / 1000);
       last = now;
-      // where the flight is (the same ease-in-out as the animation)
-      const ms = Number(lead?.currentTime ?? 0);
-      const u = Math.min(1, Math.max(0, (ms - hold * 1000) / (flight * 1000)));
-      const shown = u >= 1 ? 100 : 100 * (0.5 - Math.cos(Math.PI * u) / 2);
-      // real loading: if it's behind the flight, pause the flight until it catches up
+      const elapsed = (now - start) / 1000;
       const target = Math.min(100, Math.max(0, progressRef ? progressRef.current : (targetRef.current ?? 0)));
       if (target > follow) follow = Math.min(target, follow + Math.max((target - follow) * dt * 4, 10 * dt));
-      // (eased, not a hard stop: the speed slides towards how far ahead
-      // loading is, so the flight slows and picks up smoothly)
-      const want = follow >= 100 ? 1 : Math.min(1, Math.max(0, (follow - shown) / 12));
-      rate += (want - rate) * Math.min(1, dt * 6);
-      if (Math.abs(rate - (lead?.playbackRate ?? 1)) > 0.02 || (want === 1 && rate > 0.98 && lead?.playbackRate !== 1)) {
-        const r = want === 1 && rate > 0.98 ? 1 : Math.max(0.0001, rate);
-        for (const a of anims) a.updatePlaybackRate(r);
+      let shown = 0;
+      if (!flying) {
+        // waiting: after the opening pause, the percentage shows real loading
+        if (elapsed >= hold) shownNum = Math.max(shownNum, Math.min(99, follow));
+        if (elapsed >= hold && target >= 100) {
+          flying = true;
+          p0 = shownNum;
+          for (const a of anims) a.play();
+        }
+      } else {
+        // flying: where the flight is (the same ease-in-out as the animation)
+        const u = Math.min(1, Math.max(0, Number(lead?.currentTime ?? 0) / (flight * 1000)));
+        shown = u >= 1 ? 100 : 100 * (0.5 - Math.cos(Math.PI * u) / 2);
+        shownNum = p0 + ((100 - p0) * shown) / 100;
       }
-      // the percentage and the mandala (cheap; the characters move by themselves)
-      const n = String(Math.floor(shown + 1e-6));
+      const n = String(Math.floor(shownNum + 1e-6));
       if (numRef.current && numRef.current.textContent !== n) {
         numRef.current.textContent = n;
         statusRef.current?.setAttribute("aria-label", `Loading ${n}%`);
       }
       if (golden && !explodedRef.current) buildUp(shown / 100);
       const endNow = golden ? shown >= goldenBurstReach() * 100 - 1e-6 : shown >= 100;
-      if (endNow && !explodedRef.current) {
-        // the ending starts (golden: the explosion, while the hands close the last gap)
+      if (flying && endNow && !explodedRef.current) {
+        // the ending starts (the reveal, as the hands close the last gap)
         explodedRef.current = true;
         startEnding(false);
       }
