@@ -368,12 +368,15 @@ export default function MughalFrame({ progress = 0, reveal = LOADER_REVEAL, onRe
       root.style.clipPath = "";
       return;
     }
-    const cx = w / 2, cy = h / 2, pts: string[] = [];
+    // the loader's actual size now (it may have been resized since the
+    // explosion started), so the opening is always centred on the screen
+    const W = root.clientWidth || w, H = root.clientHeight || h;
+    const cx = W / 2, cy = H / 2, pts: string[] = [];
     for (let i = 0; i < 160; i++) {
       const a = (i / 160) * Math.PI * 2, r = Math.max(0, wave.radius + wave.rag * waveEdge(a, wave.time));
       pts.push(`${r2(cx + Math.cos(a) * r)} ${r2(cy + Math.sin(a) * r)}`);
     }
-    root.style.clipPath = `path(evenodd, "M0 0H${w}V${h}H0Z M${pts.join("L")}Z")`;
+    root.style.clipPath = `path(evenodd, "M0 0H${W}V${H}H0Z M${pts.join("L")}Z")`;
   };
   // the mandala lit up by the explosion (golden)
   const mandalaGlow = (g: number) => {
