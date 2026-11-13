@@ -42,6 +42,7 @@ const FLIGHT_MIN_S = 2.6; // the figures' flight time (0 -> 100%) for the mandal
 // characters fly in over GOLD_FLIGHT_S, so the touch is at 1.96 s
 // (when the page is already loaded)
 const ORB_HOLD_S = 0.5;
+const HOLD_FOR_FX_S = 3; // the longest the hands wait for three.js before the explosion
 const GOLD_FLIGHT_S = 1.46; // the fingertips meet at 1.96 s - inside the explosion (1.88 s), just before the site opens (1.98 s)
 const GOLD_BURST_S = 1.88; // s: the golden explosion starts (hands nearly touching); the reveal follows 0.1 s later
 
@@ -500,13 +501,23 @@ export default function MughalFrame({ progress = 0, reveal = LOADER_REVEAL, onRe
 
   useEffect(() => {
     if (scrubbing || !artReady) return;
-    let raf = 0, last = 0, start = 0;
+    let raf = 0, last = 0, start = 0, holdSince = 0;
     const st: FlightState = { shown: 0, follow: 0 };
     const tick = (now: number) => {
       if (!start) start = last = now;
       const dt = Math.min(0.05, (now - last) / 1000);
       last = now;
       flightStep(st, (now - start) / 1000, dt, Math.min(100, Math.max(0, targetRef.current ?? 0)), reveal);
+      // golden: if three.js is still downloading (slow first visit), hold
+      // just short of the explosion for it (up to HOLD_FOR_FX_S) rather than
+      // skipping the explosion
+      if (golden && !fx.current && !explodedRef.current) {
+        const holdAt = goldenBurstReach() * 100 - 2;
+        if (st.shown >= holdAt) {
+          holdSince ||= now;
+          if (now - holdSince < HOLD_FOR_FX_S * 1000) st.shown = holdAt;
+        }
+      }
       showFlight(st.shown);
       const endNow = golden ? st.shown >= goldenBurstReach() * 100 - 1e-6 : st.shown >= 100;
       if (endNow && !explodedRef.current) {

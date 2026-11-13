@@ -6,6 +6,7 @@ import { markPreloaderComplete } from "@/lib/preloaderSignal";
 import { getLenis } from "@/lib/lenisInstance";
 import MughalFrame from "./MughalFrame";
 import { collectImageUrls, prepareImage } from "./loaderAssets";
+import { loadThree } from "./goldenReveal";
 
 // The site's full-screen loader: the Mughal frame (MughalFrame), its
 // percentage driven by real loading - every image the first screens use on
@@ -50,6 +51,22 @@ function lockScroll() {
 }
 const releaseScroll = () => unlockScroll?.();
 
+// The loader's own pictures, asked for in the page's <head> (so the browser
+// fetches them first, before the site's images and before any script runs):
+// the phone set on phones, the full set elsewhere.
+const PHONE = "(max-width: 480px)";
+const BIGGER = "(min-width: 481px)";
+const LOADER_IMAGES: [string, string | undefined][] = [
+  ["/images/loader-bg-teal.webp", undefined],
+  ["/graphics/loader-frame/mandala.svg", undefined],
+  ...["flying-ankit-sm", "flying-claude-sm", "loader-cloud-left-sm", "corner-plant-sm", "loader-cloud-top-m", "loader-cloud-flat-m", "loader-flower-plant-m"].map((n): [string, string] => [`/images/${n}.webp`, PHONE]),
+  ...["flying-ankit", "flying-claude", "loader-cloud-left", "loader-cloud-right", "loader-cloud-bottom", "loader-cloud-top", "loader-flower-plant", "corner-plant"].map((n): [string, string] => [`/images/${n}.webp`, BIGGER]),
+];
+
+// <link rel="preload"> tags in the loader's own HTML (the first thing in the
+// page's body), so the browser starts these downloads as soon as it reads them
+const preloads = LOADER_IMAGES.map(([href, media]) => <link key={href} rel="preload" as="image" href={href} media={media} fetchPriority="high" />);
+
 export default function MughalLoader() {
   const [done, setDone] = useState(false);
   const [progress, setProgress] = useState(0);
@@ -67,6 +84,8 @@ export default function MughalLoader() {
       return () => cancelAnimationFrame(id);
     }
     lockScroll();
+    // the explosion's three.js: start downloading now
+    loadThree().catch(() => {});
     const startedAt = Date.now();
     let total = 0, settled = 0, ready = false, finished = false, cancelled = false;
     // real progress, held under 100 until everything has settled
@@ -131,6 +150,8 @@ export default function MughalLoader() {
 
   if (done) return null;
   return (
+    <>
+    {preloads}
     <MughalFrame
       progress={progress}
       // the hero's entrance animations start as the golden wave opens
@@ -142,5 +163,6 @@ export default function MughalLoader() {
         setDone(true);
       }}
     />
+    </>
   );
 }
