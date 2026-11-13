@@ -30,6 +30,8 @@ const OUTER = "#710004"; // band gradient, outer edge
 const INNER = "#A0251E"; // band gradient, inner edge
 const GOLD = "#F6A225"; // the ornaments' gold
 const GOLD_LINE = 2; // px, the inner gold line
+// phones: up to this width (the biggest phones, e.g. iPhone Pro Max, are 430 px)
+const PHONE_MAX_W = 480;
 const MAX_TURN = (22 * Math.PI) / 180; // tablets: the most a character turns from its pose
 const TOUCH = 0.5; // px each fingertip stops short of the centre at 100% (they touch)
 const BLACK_LINE = GOLD_LINE;
@@ -168,7 +170,7 @@ export default function MughalFrame({ progress = 0, reveal = LOADER_REVEAL, onRe
   // frame's lines
   const inset = t + GOLD_LINE + BLACK_LINE;
   const ps = 0.7 * Math.min(1, Math.max(150, w * 0.27) / PLANT.w); // plant scale (70% of the earlier size)
-  const pw = w < 425 ? 123.3 * (w / 390) : PLANT.w * ps, ph = w < 425 ? 85 * (w / 390) : PLANT.h * ps; // phones: as in the Figma phone frame
+  const pw = w <= PHONE_MAX_W ? 123.3 * (w / 390) : PLANT.w * ps, ph = w <= PHONE_MAX_W ? 85 * (w / 390) : PLANT.h * ps; // phones: as in the Figma phone frame
 
   // --- the Figma layout. Sizes scale by DS (the design fits the screen);
   // positions are measured from the edge each piece hugs, so on another
@@ -182,11 +184,11 @@ export default function MughalFrame({ progress = 0, reveal = LOADER_REVEAL, onRe
   type Piece = { src: string; x: number; y: number; w: number; h: number; rotate?: number; shadow?: string; flip?: boolean; px?: boolean };
   // exported layers (clouds, plant) already carry their rotation, flip and
   // shadow; their box is the layer's export bounds in design units
-  // --- phones (below the site's tablet breakpoint, 425 px): the Figma phone
+  // --- phones (up to PHONE_MAX_W wide): the Figma phone
   // frame ("iPhone 13 & 14 - 1", node 785:2457, 390x844), scaled to the
   // screen's width; pieces near the top / bottom keep to that edge, the
   // middle ones (mandala, characters, the middle cloud) to the centre
-  const phone = w < 425;
+  const phone = w <= PHONE_MAX_W;
   const MS = w / 390;
   const pT = (y: number) => y * MS, pB = (y: number) => h - (844 - y) * MS, pM = (y: number) => h / 2 + (y - 422) * MS;
   const pX = (x: number) => x * MS;
@@ -214,10 +216,10 @@ export default function MughalFrame({ progress = 0, reveal = LOADER_REVEAL, onRe
   // the flying figures (drawn over the frame, as in Figma): image size,
   // centre, Figma tilt, shadow, and where the shoulder and the pointing
   // fingertip are in the image (as fractions of its width / height)
-  // tablets (the site's tablet range, 425-1024 px wide): the characters 50%
+  // portrait tablets (wider than a phone, up to 1024 px): the characters 50%
   // bigger, still hugging their corners (Ankit lower left, Claude upper
   // right) - so they start partly off the edges of the frame
-  const tablet = w >= 425 && w <= 1024 && h > w; // portrait tablets
+  const tablet = w > PHONE_MAX_W && w <= 1024 && h > w; // portrait tablets
   const FK = tablet ? 1.5 : 1; // the characters' scale
   const fL = (x: number) => x * DS * FK, fB = (y: number) => h - (DESIGN.h - y) * DS * FK;
   const fR = (x: number) => w - (DESIGN.w - x) * DS * FK, fT = (y: number) => y * DS * FK;
@@ -457,8 +459,8 @@ export default function MughalFrame({ progress = 0, reveal = LOADER_REVEAL, onRe
       if (!done) setArtReady(true);
       done = true;
     };
-    const names = w < 425 ? ["flying-ankit", "flying-claude", "loader-cloud-left", "loader-flower-plant", "corner-plant"] : ["flying-ankit", "flying-claude", "loader-cloud-left", "loader-cloud-right", "loader-cloud-bottom", "loader-cloud-top", "loader-flower-plant", "corner-plant"];
-    const extra = w < 425 ? ["/images/loader-cloud-top-m.webp", "/images/loader-cloud-flat-m.webp"] : [];
+    const names = w <= PHONE_MAX_W ? ["flying-ankit", "flying-claude", "loader-cloud-left", "loader-flower-plant", "corner-plant"] : ["flying-ankit", "flying-claude", "loader-cloud-left", "loader-cloud-right", "loader-cloud-bottom", "loader-cloud-top", "loader-flower-plant", "corner-plant"];
+    const extra = w <= PHONE_MAX_W ? ["/images/loader-cloud-top-m.webp", "/images/loader-cloud-flat-m.webp"] : [];
     const loads = [...names.map(img), ...extra].map(
       (src) =>
         new Promise<void>((res) => {
@@ -557,7 +559,7 @@ export default function MughalFrame({ progress = 0, reveal = LOADER_REVEAL, onRe
       <div ref={boxRef} className="pointer-events-none absolute" style={mandala}>
         {/* eslint-disable-next-line @next/next/no-img-element -- decorative SVG */}
         <img ref={mandalaImgRef} src={`${P}mandala.svg`} alt="" aria-hidden="true" draggable={false} className="mandala-spin absolute inset-0 h-full w-full select-none" style={{ opacity: 0.3 }} />
-        <svg ref={mandalaLineRef} aria-hidden="true" className="mandala-spin absolute inset-0 h-full w-full overflow-visible" viewBox="0 0 1 1" preserveAspectRatio="none" style={{ opacity: 0.3 }}>
+        <svg ref={mandalaLineRef} aria-hidden="true" className="mandala-spin absolute inset-0 h-full w-full overflow-visible" viewBox="0 0 1 1" preserveAspectRatio="none" style={{ opacity: 0.3, display: phone ? "none" : undefined }}>
           <path d={MANDALA_EDGE} fill="none" stroke="#B9823A" strokeWidth={0.009} strokeLinecap="round" strokeDasharray="0.0001 0.021" />
           {MANDALA_TIPS.map(([x, y]) => (
             <circle key={`${x},${y}`} cx={x} cy={y} r={0.008} fill="#B9823A" />
