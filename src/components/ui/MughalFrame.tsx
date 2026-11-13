@@ -1,10 +1,8 @@
 "use client";
 
 import { memo, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { PLANT } from "./cornerPlantEdge";
 import { MANDALA_EDGE, MANDALA_TIPS } from "./mandalaEdge";
 import { gsap } from "@/lib/gsap";
-import { LOADER_REVEAL, type LoaderReveal } from "@/lib/loaderReveal";
 import { createGoldenReveal, waveEdge, type GoldenReveal } from "./goldenReveal";
 
 // Frame for the new loader (border only, for now): the teal textured
@@ -26,6 +24,7 @@ const MANDALA = { w: 1311, h: 1310 }; // mandala.svg (raw-images/mandala-lines.s
 const CORNER = { w: 39, h: 40 }; // top-left L, arms 18 thick
 const TILE = { w: 49, h: 18 }; // band tile
 const BAND = 20; // border thickness on screen (px)
+const PLANT = { w: 391, h: 270 }; // corner-plant artwork size
 const OUTER = "#710004"; // band gradient, outer edge
 const INNER = "#A0251E"; // band gradient, inner edge
 const GOLD = "#F6A225"; // the ornaments' gold
@@ -37,8 +36,7 @@ const PHONE_OUT = 45;
 const MAX_TURN = (22 * Math.PI) / 180; // tablets: the most a character turns from its pose
 const TOUCH = 0.5; // px each fingertip stops short of the centre at 100% (they touch)
 const BLACK_LINE = GOLD_LINE;
-const FLIGHT_MIN_S = 2.6; // the figures' flight time (0 -> 100%) for the mandala ending, with the page loaded
-// the golden ending's timing: a short hold (ORB_HOLD_S), then the
+// the ending's timing: a short hold (ORB_HOLD_S), then the
 // characters fly in over GOLD_FLIGHT_S, so the touch is at 1.96 s
 // (when the page is already loaded)
 const ORB_HOLD_S = 0.5;
@@ -48,15 +46,13 @@ const GOLD_BURST_S = 1.76; // s: the reveal starts here - just before the finger
 // One step of the figures' flight. Two limits, whichever is behind:
 //  - the schedule: a smooth ease-in-out from 0 to 100 over the flight time,
 //    after the hold (so with the page loaded the touch is exactly at
-//    hold + flight - 2.2 s for the golden ending)
+//    hold + flight)
 //  - real loading: `follow` eases towards the real progress, so on a slow
 //    load the figures wait for it instead of arriving early
 // The shown value never goes back.
 type FlightState = { shown: number; follow: number };
-function flightStep(st: FlightState, elapsed: number, dt: number, target: number, reveal: LoaderReveal) {
-  const golden = reveal === "golden";
-  const hold = golden ? ORB_HOLD_S : 0, flight = golden ? GOLD_FLIGHT_S : FLIGHT_MIN_S;
-  const u = Math.min(1, Math.max(0, (elapsed - hold) / flight));
+function flightStep(st: FlightState, elapsed: number, dt: number, target: number) {
+  const u = Math.min(1, Math.max(0, (elapsed - ORB_HOLD_S) / GOLD_FLIGHT_S));
   const scheduled = 100 * (0.5 - Math.cos(Math.PI * u) / 2);
   if (target > st.follow) st.follow = Math.min(target, st.follow + Math.max((target - st.follow) * dt * 4, 10 * dt));
   st.shown = Math.max(st.shown, Math.min(scheduled, st.follow));
@@ -76,7 +72,7 @@ function openShare(W: number, H: number, r: number) {
 // function of time: the same steps the live loop takes, at a fixed rate, so
 // the preview can show any moment exactly. `shown` 0..100; `touchAt` (s) is
 // when they touch.
-export function flightAt(seconds: number, reveal: LoaderReveal) {
+export function flightAt(seconds: number) {
   const dt = 1 / 240, st: FlightState = { shown: 0, follow: 0 };
   let t = 0, shownAt = 0, touchAt = Infinity;
   while (t < 30) {
@@ -86,23 +82,22 @@ export function flightAt(seconds: number, reveal: LoaderReveal) {
       break;
     }
     t += dt;
-    flightStep(st, t, dt, 100, reveal);
+    flightStep(st, t, dt, 100);
   }
-  // the golden ending explodes a little before the touch (GOLD_BURST_S, the
-  // hands almost together); the mandala ending starts at the touch
-  const endAt = reveal === "golden" ? Math.min(GOLD_BURST_S, touchAt) : touchAt;
+  // the reveal starts a little before the touch (GOLD_BURST_S, the hands
+  // almost together)
+  const endAt = Math.min(GOLD_BURST_S, touchAt);
   return { shown: seconds >= touchAt ? 100 : shownAt, touchAt, endAt };
 }
 // how far the flight is (0..1) when the golden explosion starts
 let burstReach: number | null = null;
-const goldenBurstReach = () => (burstReach ??= flightAt(GOLD_BURST_S, "golden").shown / 100);
+const goldenBurstReach = () => (burstReach ??= flightAt(GOLD_BURST_S).shown / 100);
 
 // `progress` (0-100, real loading progress from MughalLoader) drives the
 // percentage and the figures' flight.
 //
-// At 100% the fingertips touch and one of two endings plays (`reveal`, by
-// default LOADER_REVEAL in lib/loaderReveal.ts):
-//   "golden"  - a golden energy explosion and wave (goldenReveal.ts, 2D canvas)
+// Just before the fingertips touch, the golden reveal plays (goldenReveal.ts,
+// a 2D canvas).
 // `onReveal` fires as the site starts to show, `onDone` once the loader is gone.
 //
 // `scrub` (the loader preview only): instead of playing, show the moment
@@ -114,7 +109,7 @@ const goldenBurstReach = () => (burstReach ??= flightAt(GOLD_BURST_S, "golden").
 export default memo(MughalFrame);
 // (`scrubRef` instead of a prop, read every frame, so the preview playing
 // back never re-renders the frame.)
-function MughalFrame({ progress = 0, progressRef, reveal = LOADER_REVEAL, onReveal, onRevealed90, onDone, scrubRef }: { progress?: number; progressRef?: { current: number }; reveal?: LoaderReveal; onReveal?: () => void; onRevealed90?: () => void; onDone?: () => void; scrubRef?: { current: number } }) {
+function MughalFrame({ progress = 0, progressRef, onReveal, onRevealed90, onDone, scrubRef }: { progress?: number; progressRef?: { current: number }; onReveal?: () => void; onRevealed90?: () => void; onDone?: () => void; scrubRef?: { current: number } }) {
   const [size, setSize] = useState({ w: 1440, h: 900 });
   // Until the screen is measured, only the plain teal backdrop shows (no
   // images requested at the wrong size, nothing jumping into place); once
@@ -126,8 +121,6 @@ function MughalFrame({ progress = 0, progressRef, reveal = LOADER_REVEAL, onReve
   const mandalaImgRef = useRef<HTMLImageElement>(null);
   const mandalaLitRef = useRef<HTMLImageElement>(null); // the glowing gold copy, faded in by the explosion
   const mandalaWrapRef = useRef<HTMLDivElement>(null); // the one spinning layer
-  // the mandala ending's pieces
-  const boxRef = useRef<HTMLDivElement>(null);
   // the golden ending's warm light on the two characters
   const ankitGlowRef = useRef<HTMLDivElement>(null);
   const claudeGlowRef = useRef<HTMLDivElement>(null);
@@ -243,12 +236,12 @@ function MughalFrame({ progress = 0, progressRef, reveal = LOADER_REVEAL, onReve
   const fR = (x: number) => w - (DESIGN.w - x) * DS * FK, fT = (y: number) => y * DS * FK;
   // on tablets each is pushed a quarter of its width further into its corner (off the edge)
   const out = (fw: number) => (tablet ? fw * DS * 0.25 : 0);
-  const ankit = { w: 701.03 * FK, h: 520.84 * FK, cx: fL(-52 + 707.24 / 2) - out(701.03 * FK), cy: fB(495.61 + 529.22 / 2), rotate: -0.69, shadow: "0 4px 12px rgba(0,0,0,0.5)", shoulder: [960 / 1455, 360 / 1081], tip: [1430 / 1455, 126 / 1081] };
+  const ankit = { w: 701.03 * FK, h: 520.84 * FK, cx: fL(-52 + 707.24 / 2) - out(701.03 * FK), cy: fB(495.61 + 529.22 / 2), rotate: -0.69, shoulder: [960 / 1455, 360 / 1081], tip: [1430 / 1455, 126 / 1081] };
   // phones: Ankit middle left, Claude middle right (tilted 15 deg), from Figma
   if (phone) {
     Object.assign(ankit, { w: (374.446 * MS) / DS, h: (278.197 * MS) / DS, cx: w / 2 - (205.7 + PHONE_OUT) * MS, cy: h / 2 + 104.7 * MS, rotate: 1.73 });
   }
-  const claude = { w: 683.63 * FK, h: 437.3 * FK, cx: fR(718.27 + 810.44 / 2) + out(683.63 * FK), cy: fT(-40 + 718.11 / 2), rotate: -29.63, shadow: "0 4px 20px rgba(0,0,0,0.8)", shoulder: [480 / 1568, 375 / 1003], tip: [61 / 1568, 316 / 1003] };
+  const claude = { w: 683.63 * FK, h: 437.3 * FK, cx: fR(718.27 + 810.44 / 2) + out(683.63 * FK), cy: fT(-40 + 718.11 / 2), rotate: -29.63, shoulder: [480 / 1568, 375 / 1003], tip: [61 / 1568, 316 / 1003] };
   if (phone) {
     Object.assign(claude, { w: (385.735 * MS) / DS, h: (246.742 * MS) / DS, cx: w / 2 + (205.4 + PHONE_OUT) * MS, cy: h / 2 - 19.4 * MS, rotate: -15 });
   }
@@ -334,7 +327,7 @@ function MughalFrame({ progress = 0, progressRef, reveal = LOADER_REVEAL, onReve
     />
   );
   const transformAt = (g: Placed, reach: number) => `translate(${r2(g.tx + g.gx * reach)}px, ${r2(g.ty + g.gy * reach)}px) rotate(${r2(g.angle)}deg)`;
-  const figure = (src: string, g: Placed, shadow: string, ref: React.RefObject<HTMLImageElement | null>) => (
+  const figure = (src: string, g: Placed, ref: React.RefObject<HTMLImageElement | null>) => (
     // eslint-disable-next-line @next/next/no-img-element -- decorative figure
     <img
       ref={ref}
@@ -362,20 +355,18 @@ function MughalFrame({ progress = 0, progressRef, reveal = LOADER_REVEAL, onReve
   // download, ready straight away)
   const fx = useRef<GoldenReveal | null>(null);
   useEffect(() => {
-    if (reveal !== "golden") return;
     const canvas = fxRef.current;
     if (canvas) fx.current = createGoldenReveal(canvas, window.innerWidth, window.innerHeight, gsap);
     return () => {
       fx.current?.dispose();
       fx.current = null;
     };
-  }, [reveal, measured]);
+  }, [measured]);
   useEffect(() => {
     fx.current?.resize(w, h);
   }, [w, h]);
 
   // --- what every frame sets, live or scrubbed
-  const golden = reveal === "golden";
   // the figures, their light and the number at a given point of the flight
   const explodedRef = useRef(false);
   const lastCut = useRef(-1);
@@ -383,11 +374,9 @@ function MughalFrame({ progress = 0, progressRef, reveal = LOADER_REVEAL, onReve
     const reach = shown / 100;
     if (ankitRef.current) ankitRef.current.style.transform = transformAt(placed.ankit, reach);
     if (claudeRef.current) claudeRef.current.style.transform = transformAt(placed.claude, reach);
-    if (golden) {
-      if (ankitGlowRef.current) ankitGlowRef.current.style.transform = transformAt(placed.ankit, reach);
-      if (claudeGlowRef.current) claudeGlowRef.current.style.transform = transformAt(placed.claude, reach);
-      if (!explodedRef.current) buildUp(reach);
-    }
+    if (ankitGlowRef.current) ankitGlowRef.current.style.transform = transformAt(placed.ankit, reach);
+    if (claudeGlowRef.current) claudeGlowRef.current.style.transform = transformAt(placed.claude, reach);
+    if (!explodedRef.current) buildUp(reach);
     const n = String(Math.floor(shown + 1e-6));
     if (numRef.current && numRef.current.textContent !== n) {
       numRef.current.textContent = n;
@@ -462,9 +451,9 @@ function MughalFrame({ progress = 0, progressRef, reveal = LOADER_REVEAL, onReve
         cbRef.current.onDone?.();
       },
     };
-    if (golden && fx.current) return fx.current.play(hooks, { scrub: scrubbing });
+    if (fx.current) return fx.current.play(hooks, { scrub: scrubbing });
     if (scrubbing) return null; // the effect isn't set up yet: try again on the next move
-    // no WebGL: a plain fade instead
+    // no 2D canvas: a plain fade instead
     hooks.onReveal();
     if (root) gsap.to(root, { opacity: 0, duration: 0.6, ease: "power1.inOut", onComplete: hooks.onDone });
     else hooks.onDone();
@@ -515,7 +504,7 @@ function MughalFrame({ progress = 0, progressRef, reveal = LOADER_REVEAL, onReve
   // only reads where the flight is (the percentage, the mandala, the reveal).
   useEffect(() => {
     if (scrubbing || !artReady) return;
-    const hold = golden ? ORB_HOLD_S : 0, flight = golden ? GOLD_FLIGHT_S : FLIGHT_MIN_S;
+    const hold = ORB_HOLD_S, flight = GOLD_FLIGHT_S;
     const timing: KeyframeAnimationOptions = { duration: flight * 1000, easing: "cubic-bezier(0.37, 0, 0.63, 1)", fill: "both" };
     const anims: Animation[] = [];
     const fly = (el: Element | null, g: Placed) => {
@@ -557,8 +546,8 @@ function MughalFrame({ progress = 0, progressRef, reveal = LOADER_REVEAL, onReve
         numRef.current.textContent = n;
         statusRef.current?.setAttribute("aria-label", `Loading ${n}%`);
       }
-      if (golden && !explodedRef.current) buildUp(shown / 100);
-      const endNow = golden ? shown >= goldenBurstReach() * 100 - 1e-6 : shown >= 100;
+      if (!explodedRef.current) buildUp(shown / 100);
+      const endNow = shown >= goldenBurstReach() * 100 - 1e-6;
       if (flying && endNow && !explodedRef.current) {
         // the ending starts (the reveal, as the hands close the last gap)
         explodedRef.current = true;
@@ -573,17 +562,17 @@ function MughalFrame({ progress = 0, progressRef, reveal = LOADER_REVEAL, onReve
       for (const a of anims) a.cancel();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- the helpers only read refs and layout
-  }, [placed, reveal, scrubbing, artReady]);
+  }, [placed, scrubbing, artReady]);
 
   // The scrubbed preview: show the moment `scrub` seconds from the start
   const endingRef = useRef<Tl | null>(null);
   const applyScrub = (scrub: number) => {
-    const { shown, endAt } = flightAt(scrub, reveal);
+    const { shown, endAt } = flightAt(scrub);
     explodedRef.current = scrub >= endAt;
     if (scrub < endAt) {
       showFlight(shown);
       endingRef.current?.seek(0, false); // the ending not started yet
-      if (golden && endingRef.current) {
+      if (endingRef.current) {
         cut(null);
         buildUp(shown / 100);
       }
@@ -607,7 +596,7 @@ function MughalFrame({ progress = 0, progressRef, reveal = LOADER_REVEAL, onReve
     raf = requestAnimationFrame(loop);
     return () => cancelAnimationFrame(raf);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- the helpers only read refs and layout
-  }, [scrubRef, placed, reveal]);
+  }, [scrubRef, placed]);
 
   const corner = (left: number, top: number, flip: string) => (
     // eslint-disable-next-line @next/next/no-img-element -- decorative SVG
@@ -635,10 +624,8 @@ function MughalFrame({ progress = 0, progressRef, reveal = LOADER_REVEAL, onReve
       {pieces.map(pieceImg)}
       {/* the mandala (raw-images/mandala-lines.svg, in the reference painting's
           muted ochre) in the centre, behind the figures' hands, with its
-          dotted outline; both turn slowly. The box around them turns and
-          swells in the mandala ending, which also lights a bright-gold copy
-          and draws the outline in gold. */}
-      <div ref={boxRef} className="pointer-events-none absolute" style={mandala}>
+          dotted outline; both turn slowly. */}
+      <div className="pointer-events-none absolute" style={mandala}>
         {/* one spinning layer: the mandala, its dotted outline (not on
             phones) and the glowing copy the explosion fades in */}
         <div ref={mandalaWrapRef} className="mandala-spin absolute inset-0 will-change-transform">
@@ -652,10 +639,8 @@ function MughalFrame({ progress = 0, progressRef, reveal = LOADER_REVEAL, onReve
               ))}
             </svg>
           )}
-          {reveal === "golden" && (
-            // eslint-disable-next-line @next/next/no-img-element -- decorative SVG (its viewBox has a margin for the glow)
-            <img ref={mandalaLitRef} src={`${P}mandala-lit.svg`} alt="" aria-hidden="true" draggable={false} className="absolute max-w-none select-none" style={{ left: "-3.05%", top: "-3.05%", width: "106.1%", height: "106.1%", opacity: 0 }} />
-          )}
+          {/* eslint-disable-next-line @next/next/no-img-element -- decorative SVG (its viewBox has a margin for the glow) */}
+          <img ref={mandalaLitRef} src={`${P}mandala-lit.svg`} alt="" aria-hidden="true" draggable={false} className="absolute max-w-none select-none" style={{ left: "-3.05%", top: "-3.05%", width: "106.1%", height: "106.1%", opacity: 0 }} />
         </div>
       </div>
       <svg width={w} height={h} viewBox={`0 0 ${w} ${h}`} className="absolute inset-0 block" aria-hidden="true">
@@ -696,7 +681,7 @@ function MughalFrame({ progress = 0, progressRef, reveal = LOADER_REVEAL, onReve
       {corner(0, h - ch, "scaleY(-1)")}
       {corner(w - cw, h - ch, "scale(-1, -1)")}
       {/* "LOADING" and the percentage in the bottom-right corner, inside the
-          frame - same type as the current loader (Preloader.tsx) */}
+          frame - same type as the earlier loader */}
       <div className="absolute grid text-white" style={{ left: r2(w - inset - 28), top: r2(h - inset - 22), transform: "translate(-100%, -100%)" }} ref={statusRef} role="status" aria-label="Loading 0%">
         {/* the letters of LOADING spread to span exactly the width of "100%",
             centred over the number */}
@@ -717,14 +702,14 @@ function MughalFrame({ progress = 0, progressRef, reveal = LOADER_REVEAL, onReve
         </span>
       </div>
       {/* flying Ankit and flying Claude, over the frame */}
-      {figure(img("flying-ankit-s"), placed.ankit, ankit.shadow, ankitRef)}
-      {figure(img("flying-claude-s"), placed.claude, claude.shadow, claudeRef)}
-      {reveal === "golden" && figureLight(img("flying-ankit-s"), placed.ankit, ankit.tip, ankitGlowRef)}
-      {reveal === "golden" && figureLight(img("flying-claude-s"), placed.claude, claude.tip, claudeGlowRef)}
+      {figure(img("flying-ankit-s"), placed.ankit, ankitRef)}
+      {figure(img("flying-claude-s"), placed.claude, claudeRef)}
+      {figureLight(img("flying-ankit-s"), placed.ankit, ankit.tip, ankitGlowRef)}
+      {figureLight(img("flying-claude-s"), placed.claude, claude.tip, claudeGlowRef)}
       </div>
       {/* the golden energy sequence (goldenReveal.ts): a transparent 2D
           canvas over the loader and the site */}
-      {reveal === "golden" && <canvas ref={fxRef} aria-hidden="true" className="pointer-events-none fixed inset-0 z-[1001] h-full w-full" />}
+      <canvas ref={fxRef} aria-hidden="true" className="pointer-events-none fixed inset-0 z-[1001] h-full w-full" />
     </>
   );
 }
