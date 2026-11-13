@@ -153,7 +153,7 @@ const UNDER_CLOTH_X = [0.045, 0.955]; // fraction of the TV image's width
 // the real image. Like the panel, it sits behind the cabinet until that fades.
 const CLOTH_SHADOW_CLIP_TOP = 0.8; // fraction of the TV image's height
 const CLOTH_SHADOW_OFFSET = 0.2; // % of the TV image's height, downward
-const CLOTH_SHADOW_BLUR = 2; // px, scales with the scene's zoom
+// (the shadow's 2 px blur is baked into tv-with-table-shadow.webp)
 const CLOTH_SHADOW_OPACITY = 0.4;
 const AFTER_ZOOM_VH = 1;
 // "Who is this Ankit?" heading on the pink panel, HEADING_GAP px below the
@@ -293,7 +293,7 @@ function layout(scale: number, surface: number, star: number) {
 // the loader is done - so a fast scroll never reaches the zoom before they're
 // ready (for a moment only the star, the dark backdrop and the screen would
 // show, with no TV in front of them).
-const TV_SCENE_IMAGES = ["/images/tv-with-table.webp", "/images/tv-table.webp", "/images/tv-glass.webp", "/images/tv-audience.webp", "/graphics/tv-star.svg"];
+const TV_SCENE_IMAGES = ["/images/tv-with-table.webp", "/images/tv-table.webp", "/images/tv-glass.webp", "/images/tv-audience.webp", "/graphics/tv-star.svg", "/images/tv-with-table-shadow.webp", "/images/tv-audience-blur.webp"];
 const warmed: HTMLImageElement[] = []; // kept, so the browser keeps them decoded
 function useWarmTvImages(enabled: boolean) {
   useEffect(() => {
@@ -362,6 +362,7 @@ export default function TvOnCabinet({ children }: { children: ReactNode }) {
     () => !window.matchMedia(REDUCED_MOTION).matches,
     () => false,
   );
+  const sharpTimer = useRef(0);
   const [geo, setGeo] = useState({ originX: 0, originY: 0, frameOffset: 0, zoom: 1, distance: 0, vh: 0, headingTop: 0, peopleDrop: 0, cover: null as null | { left: number; top: number; width: number; height: number } });
   // Height of the after-zoom content (heading + photo); it grows with its
   // content, and the pink panel is sized to cover all of it.
@@ -466,6 +467,21 @@ export default function TvOnCabinet({ children }: { children: ReactNode }) {
   // reaching the viewport top), over the zoom distance. Exponential so the
   // zoom feels like a steady camera move rather than speeding up.
   const { scrollY } = useScroll();
+  // While the zoom is moving, the scene is drawn once and only scaled on the
+  // graphics card (will-change: transform), so it never has to redraw a
+  // huge zoomed layer tile by tile mid-scroll (parts of the TV dropping out
+  // for a frame). A moment after the scrolling stops it's redrawn sharp.
+  useMotionValueEvent(scrollY, "change", () => {
+    const scene = sceneRef.current, track = trackRef.current;
+    if (!zoomEnabled || !scene || !track || geo.distance <= 0) return;
+    const p = -track.getBoundingClientRect().top / geo.distance;
+    if (p <= 0 || p >= 1) return;
+    if (scene.style.willChange !== "transform") scene.style.willChange = "transform";
+    window.clearTimeout(sharpTimer.current);
+    sharpTimer.current = window.setTimeout(() => {
+      if (sceneRef.current) sceneRef.current.style.willChange = "auto";
+    }, 220);
+  });
   const zoomScale = useTransform(scrollY, () => {
     const track = trackRef.current;
     if (!zoomEnabled || !track || geo.distance <= 0) return 1;
@@ -597,7 +613,7 @@ export default function TvOnCabinet({ children }: { children: ReactNode }) {
     return t * t * (3 - 2 * t);
   });
   const shadowOpacity = useTransform(() => darkness.get() * CLOTH_SHADOW_OPACITY);
-  const cabinetFilter = useTransform(darkness, (d) => `brightness(${(1 - 0.88 * d).toFixed(3)})`);
+  const cabinetDarken = useTransform(darkness, (d) => 0.88 * d); // the cabinet's darkening overlay
   // Cabinet and people fade out completely by the end of the zoom, leaving
   // only the TV and its cloth over the gradient panel below.
   const fadeOut = useTransform(darkness, (d) => 1 - d);
@@ -635,13 +651,18 @@ export default function TvOnCabinet({ children }: { children: ReactNode }) {
     maxBlurMV.set(maxBlur);
   }, [blurPattern, maxBlur, slowFirstMV, maxBlurMV]);
 
-  const peopleBlur = useTransform<number, string>([scrollY, slowFirstMV, maxBlurMV], ([, slowFirst, max]) => {
+  // How blurred the audience is (0..1, 1 = the "max blur" setting at 100):
+  // a crossfade to a pre-blurred copy (tv-audience-blur.webp) instead of a
+  // live blur filter - up to 100 px on a huge zoomed layer, every frame.
+  const peopleBlurAmt = useTransform<number, number>([scrollY, slowFirstMV, maxBlurMV], ([, slowFirst, max]) => {
     const track = trackRef.current;
-    if (!zoomEnabled || !track || geo.distance <= 0) return "blur(0px)";
+    if (!zoomEnabled || !track || geo.distance <= 0) return 0;
     const p = Math.min(1, Math.max(0, -track.getBoundingClientRect().top / geo.distance));
     const eased = slowFirst ? Math.pow(p, PEOPLE_BLUR_CURVE) : 1 - Math.pow(1 - p, PEOPLE_BLUR_CURVE);
-    return `blur(${((eased * max) / Math.pow(geo.zoom, p)).toFixed(2)}px)`;
+    return Math.min(1, (eased * max) / 100);
   });
+  const peopleSharpOpacity = useTransform<number, number>([fadeOut, peopleBlurAmt], ([f, b]) => f * (1 - b));
+  const peopleBlurOpacity = useTransform<number, number>([fadeOut, peopleBlurAmt], ([f, b]) => f * b);
 
   // Phone: no TV scene or zoom, just the pink "Who is this Ankit?" panel
   // as a plain section (see PhoneProducts).
@@ -696,16 +717,34 @@ export default function TvOnCabinet({ children }: { children: ReactNode }) {
             opacity: darkness,
           }}
         />
-        <motion.img
-          src="/images/tv-table.webp"
-          alt=""
-          aria-hidden="true"
-          width={2400}
-          height={1351}
-          loading="lazy"
-          className="block h-auto w-full select-none"
-          style={{ filter: cabinetFilter, opacity: fadeOut }}
-        />
+        {/* The cabinet. It darkens and fades out at the end of the zoom: a
+            black copy of its shape (a mask) fading in over it, instead of a
+            brightness filter re-applied on a huge zoomed layer every frame
+            (the same look: brightness 1 - 0.88d). */}
+        <motion.div className="relative" style={{ opacity: fadeOut }}>
+          {/* eslint-disable-next-line @next/next/no-img-element -- large decorative raster sized via CSS */}
+          <img
+            src="/images/tv-table.webp"
+            alt=""
+            aria-hidden="true"
+            width={2400}
+            height={1351}
+            loading="lazy"
+            className="block h-auto w-full select-none"
+          />
+          <motion.div
+            aria-hidden="true"
+            className="pointer-events-none absolute inset-0"
+            style={{
+              background: "#000",
+              opacity: cabinetDarken,
+              maskImage: "url(/images/tv-table.webp)",
+              WebkitMaskImage: "url(/images/tv-table.webp)",
+              maskSize: "100% 100%",
+              WebkitMaskSize: "100% 100%",
+            }}
+          />
+        </motion.div>
         {/* marginTop % also resolves against the wrapper's width; it drops
             the TV below the star tips' headroom. */}
         <div className="absolute top-0" style={{ left: `${tvLeft}%`, width: `${tvWidth}%`, marginTop: `${starOverhang}%` }}>
@@ -824,7 +863,7 @@ export default function TvOnCabinet({ children }: { children: ReactNode }) {
           )}
           {zoomEnabled && (
             <motion.img
-              src="/images/tv-with-table.webp"
+              src="/images/tv-with-table-shadow.webp"
               alt=""
               aria-hidden="true"
               width={2000}
@@ -832,8 +871,8 @@ export default function TvOnCabinet({ children }: { children: ReactNode }) {
               loading="lazy"
               className="pointer-events-none absolute inset-x-0 top-0 -z-[5] h-auto w-full select-none"
               style={{
+                // (a pre-made soft black silhouette of the TV: no live filter)
                 translate: `0 ${CLOTH_SHADOW_OFFSET}%`,
-                filter: `brightness(0) blur(${CLOTH_SHADOW_BLUR}px)`,
                 opacity: shadowOpacity,
                 clipPath: `inset(${CLOTH_SHADOW_CLIP_TOP * 100}% -5% -10% -5%)`,
               }}
@@ -871,7 +910,18 @@ export default function TvOnCabinet({ children }: { children: ReactNode }) {
           height={599}
           loading="lazy"
           className="pointer-events-none absolute bottom-0 left-1/2 z-20 h-auto max-w-none select-none"
-          style={{ width: `${PEOPLE_WIDTH_PER_UNIT * people * tvWidth}%`, translate: `-50% calc(${peopleY}% + ${zoomEnabled && Number.isFinite(geo.peopleDrop) ? geo.peopleDrop : 0}px)`, y: peopleParallaxY, filter: peopleBlur, opacity: fadeOut }}
+          style={{ width: `${PEOPLE_WIDTH_PER_UNIT * people * tvWidth}%`, translate: `-50% calc(${peopleY}% + ${zoomEnabled && Number.isFinite(geo.peopleDrop) ? geo.peopleDrop : 0}px)`, y: peopleParallaxY, opacity: peopleSharpOpacity }}
+        />
+        {/* the same audience, pre-blurred, faded in as the zoom blurs them */}
+        <motion.img
+          src="/images/tv-audience-blur.webp"
+          alt=""
+          aria-hidden="true"
+          width={1094}
+          height={599}
+          loading="lazy"
+          className="pointer-events-none absolute bottom-0 left-1/2 z-20 h-auto max-w-none select-none"
+          style={{ width: `${PEOPLE_WIDTH_PER_UNIT * people * tvWidth}%`, translate: `-50% calc(${peopleY}% + ${zoomEnabled && Number.isFinite(geo.peopleDrop) ? geo.peopleDrop : 0}px)`, y: peopleParallaxY, opacity: peopleBlurOpacity }}
         />
       </motion.div>
       </div>
