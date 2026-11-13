@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { isReducedMotion } from "@/lib/gsap";
 import { markPreloaderComplete } from "@/lib/preloaderSignal";
+import { getLenis } from "@/lib/lenisInstance";
 import MughalFrame from "./MughalFrame";
 import { collectImageUrls, prepareImage } from "./loaderAssets";
 
@@ -21,6 +22,34 @@ const MAX_WAIT_MS = 8000;
 // more scan this long after the start
 const RESCAN_MS = 400;
 
+// Scrolling is blocked while the loader is up - not just overflow:hidden
+// (the smooth scroll, Lenis, moves the page in code and ignores that), but
+// the wheel, touch and scroll keys themselves, caught before Lenis sees them.
+// It's released once 90% of the screen has been revealed.
+const SCROLL_KEYS = new Set(["ArrowUp", "ArrowDown", "PageUp", "PageDown", "Home", "End", " ", "Spacebar"]);
+let unlockScroll: (() => void) | null = null;
+function lockScroll() {
+  const block = (e: Event) => {
+    if (e instanceof KeyboardEvent && !SCROLL_KEYS.has(e.key)) return;
+    e.preventDefault();
+    e.stopImmediatePropagation();
+  };
+  const opts = { capture: true, passive: false } as const;
+  for (const t of ["wheel", "touchmove", "keydown"]) window.addEventListener(t, block, opts);
+  document.documentElement.style.overflow = "hidden";
+  getLenis()?.stop();
+  unlockScroll = () => {
+    for (const t of ["wheel", "touchmove", "keydown"]) window.removeEventListener(t, block, opts);
+    document.documentElement.style.overflow = "";
+    window.scrollTo(0, 0); // start from the top, whatever happened underneath
+    const lenis = getLenis();
+    lenis?.scrollTo(0, { immediate: true });
+    lenis?.start();
+    unlockScroll = null;
+  };
+}
+const releaseScroll = () => unlockScroll?.();
+
 export default function MughalLoader() {
   const [done, setDone] = useState(false);
   const [progress, setProgress] = useState(0);
@@ -37,7 +66,7 @@ export default function MughalLoader() {
       });
       return () => cancelAnimationFrame(id);
     }
-    document.documentElement.style.overflow = "hidden";
+    lockScroll();
     const startedAt = Date.now();
     let total = 0, settled = 0, ready = false, finished = false, cancelled = false;
     // real progress, held under 100 until everything has settled
@@ -96,7 +125,7 @@ export default function MughalLoader() {
       window.clearTimeout(rescan);
       window.clearTimeout(safety);
       window.clearTimeout(minTimer);
-      document.documentElement.style.overflow = "";
+      releaseScroll();
     };
   }, []);
 
@@ -106,8 +135,9 @@ export default function MughalLoader() {
       progress={progress}
       // the hero's entrance animations start as the golden wave opens
       onReveal={markPreloaderComplete}
+      onRevealed90={releaseScroll}
       onDone={() => {
-        document.documentElement.style.overflow = "";
+        releaseScroll();
         markPreloaderComplete();
         setDone(true);
       }}
