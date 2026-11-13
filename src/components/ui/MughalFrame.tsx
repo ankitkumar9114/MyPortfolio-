@@ -39,6 +39,7 @@ const FLIGHT_MIN_S = 2.6; // the figures' flight time (0 -> 100%) for the mandal
 // (when the page is already loaded)
 const ORB_HOLD_S = 0.5;
 const GOLD_FLIGHT_S = 1.7;
+const GOLD_BURST_S = 1.97; // s: the golden explosion starts (hands almost touching)
 const ORB_BURST_S = 0.35; // the orb bursting outwards at the touch
 
 // One step of the figures' flight. Two limits, whichever is behind:
@@ -75,8 +76,14 @@ export function flightAt(seconds: number, reveal: LoaderReveal) {
     t += dt;
     flightStep(st, t, dt, 100, reveal);
   }
-  return { shown: seconds >= touchAt ? 100 : shownAt, touchAt };
+  // the golden ending explodes a little before the touch (GOLD_BURST_S, the
+  // hands almost together); the mandala ending starts at the touch
+  const endAt = reveal === "golden" ? Math.min(GOLD_BURST_S, touchAt) : touchAt;
+  return { shown: seconds >= touchAt ? 100 : shownAt, touchAt, endAt };
 }
+// how far the flight is (0..1) when the golden explosion starts
+let burstReach: number | null = null;
+const goldenBurstReach = () => (burstReach ??= flightAt(GOLD_BURST_S, "golden").shown / 100);
 
 // `progress` (0-100, real loading progress from MughalLoader) drives the
 // percentage and the figures' flight.
@@ -313,6 +320,7 @@ export default function MughalFrame({ progress = 0, reveal = LOADER_REVEAL, onRe
   // --- what every frame sets, live or scrubbed
   const golden = reveal === "golden";
   // the figures, their light and the number at a given point of the flight
+  const explodedRef = useRef(false);
   const showFlight = (shown: number) => {
     const reach = shown / 100;
     if (ankitRef.current) ankitRef.current.style.transform = transformAt(placed.ankit, reach);
@@ -320,7 +328,7 @@ export default function MughalFrame({ progress = 0, reveal = LOADER_REVEAL, onRe
     if (golden) {
       if (ankitGlowRef.current) ankitGlowRef.current.style.transform = transformAt(placed.ankit, reach);
       if (claudeGlowRef.current) claudeGlowRef.current.style.transform = transformAt(placed.claude, reach);
-      buildUp(reach);
+      if (!explodedRef.current) buildUp(reach);
     }
     const n = String(Math.floor(shown + 1e-6));
     if (numRef.current && numRef.current.textContent !== n) {
@@ -333,7 +341,7 @@ export default function MughalFrame({ progress = 0, reveal = LOADER_REVEAL, onRe
     const orb = orbRef.current;
     if (!orb) return;
     orb.style.opacity = "1";
-    const g = Math.min(1, Math.max(0, (k - 0.78) / 0.22)); // grows only once the hands are this close
+    const g = Math.min(1, Math.max(0, (k - 0.78) / (goldenBurstReach() - 0.78))); // grows only once the hands are this close, full size at the explosion
     orb.style.transform = `scale(${r2(0.5 + 2.4 * g * g * (3 - 2 * g))})`;
     if (orbHaloRef.current) orbHaloRef.current.style.opacity = String(r2(0.35 + 0.65 * k));
     if (orbAttractRef.current) orbAttractRef.current.style.opacity = String(r2(Math.min(1, Math.max(0, (k - 0.05) / 0.3))));
@@ -419,8 +427,11 @@ export default function MughalFrame({ progress = 0, reveal = LOADER_REVEAL, onRe
       last = now;
       flightStep(st, (now - start) / 1000, dt, Math.min(100, Math.max(0, targetRef.current ?? 0)), reveal);
       showFlight(st.shown);
-      if (st.shown >= 100) {
-        // the touch: the orb bursts, the ending takes it from here
+      const endNow = golden ? st.shown >= goldenBurstReach() * 100 - 1e-6 : st.shown >= 100;
+      if (endNow && !explodedRef.current) {
+        // the ending starts: the orb bursts (golden, while the hands close
+        // the last gap), the ending takes it from here
+        explodedRef.current = true;
         if (golden && orbRef.current) {
           const orb = orbRef.current, t0 = performance.now();
           const burst = (n: number) => {
@@ -430,8 +441,8 @@ export default function MughalFrame({ progress = 0, reveal = LOADER_REVEAL, onRe
           if (orb) requestAnimationFrame(burst);
         }
         startEnding(false);
-        return;
       }
+      if (st.shown >= 100) return; // they've touched: nothing left to move
       raf = requestAnimationFrame(tick);
     };
     raf = requestAnimationFrame(tick);
@@ -443,8 +454,9 @@ export default function MughalFrame({ progress = 0, reveal = LOADER_REVEAL, onRe
   const endingRef = useRef<Tl | null>(null);
   useEffect(() => {
     if (scrub === undefined) return;
-    const { shown, touchAt } = flightAt(scrub, reveal);
-    if (scrub < touchAt) {
+    const { shown, endAt } = flightAt(scrub, reveal);
+    explodedRef.current = scrub >= endAt;
+    if (scrub < endAt) {
       showFlight(shown);
       endingRef.current?.seek(0, false); // the ending not started yet
       if (golden && endingRef.current) {
@@ -452,10 +464,10 @@ export default function MughalFrame({ progress = 0, reveal = LOADER_REVEAL, onRe
         buildUp(shown / 100);
       }
     } else {
-      showFlight(100);
+      showFlight(shown);
       if (!endingRef.current) endingRef.current = startEnding(true);
-      endingRef.current?.seek(scrub - touchAt, false);
-      if (golden) orbBurst((scrub - touchAt) / ORB_BURST_S);
+      endingRef.current?.seek(scrub - endAt, false);
+      if (golden) orbBurst((scrub - endAt) / ORB_BURST_S);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- the helpers only read refs and layout
   }, [scrub, placed, reveal]);
@@ -599,7 +611,12 @@ type DivRef = React.RefObject<HTMLDivElement | null>;
 type SvgRef = React.RefObject<SVGSVGElement | null>;
 function Orb({ size, cx, cy, orbRef, haloRef, attractRef, arcsRef }: { size: number; cx: number; cy: number; orbRef: DivRef; haloRef: DivRef; attractRef: DivRef; arcsRef: SvgRef }) {
   const q = (n: number) => Math.round(n * 100) / 100;
-  const core = size * 0.13, mote = Math.max(3, size * 0.022);
+  const core = size * 0.3, mote = Math.max(3, size * 0.022);
+  // fine dust round the light (fixed, so server and browser agree)
+  const dust = Array.from({ length: 16 }, (_, i) => {
+    const a = i * 2.39996, d = size * (0.07 + ((i * 37) % 17) / 17 * 0.17);
+    return { x: q(size / 2 + Math.cos(a) * d), y: q(size / 2 + Math.sin(a) * d), s: q(Math.max(1.5, size * (0.008 + (i % 3) * 0.004))), delay: q(((i * 0.29) % 1.8)) };
+  });
   // motes drawn in from all round (fixed, so server and browser agree)
   const pulls = Array.from({ length: 12 }, (_, i) => {
     const a = (i / 12) * Math.PI * 2 + (i % 3) * 0.4, d = size * (0.38 + (i % 4) * 0.05);
@@ -631,6 +648,9 @@ function Orb({ size, cx, cy, orbRef, haloRef, attractRef, arcsRef }: { size: num
       </svg>
       {/* the core, with motes orbiting it */}
       <div className="orb-core absolute" style={{ left: q(size / 2 - core / 2), top: q(size / 2 - core / 2), width: q(core), height: q(core) }} />
+      {dust.map((d, i) => (
+        <div key={i} className="orb-mote orb-dust absolute" style={{ left: q(d.x - d.s / 2), top: q(d.y - d.s / 2), width: d.s, height: d.s, animationDelay: `${d.delay}s` }} />
+      ))}
     </div>
   );
 }

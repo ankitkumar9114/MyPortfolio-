@@ -23,8 +23,8 @@ export default function LoaderPreview() {
     setTimeState(t);
   };
   const [playing, setPlaying] = useState(true);
-  const touchAt = flightAt(0, reveal).touchAt;
-  const total = touchAt + ENDING[reveal];
+  const { touchAt, endAt } = flightAt(0, reveal);
+  const total = endAt + ENDING[reveal];
 
   // playing: move the clock on in real time
   useEffect(() => {

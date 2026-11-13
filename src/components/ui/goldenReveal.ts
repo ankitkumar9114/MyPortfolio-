@@ -53,7 +53,7 @@ export const waveEdge = (a: number, t: number) =>
 
 // the timeline (s)
 const SPARK_END = 0.06;
-const REVEAL_START = 0.21; // the site starts to show 0.21 s after the touch
+const REVEAL_START = 0.44; // the site starts to show 0.44 s after the explosion (2.41 s from the start)
 const REVEAL_END = REVEAL_START + 1.2;
 const END = REVEAL_END + 0.5;
 export const GOLDEN_DURATION = END; // s, the touch to the end
