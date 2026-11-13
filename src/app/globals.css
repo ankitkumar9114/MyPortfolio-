@@ -467,3 +467,13 @@ body {
 @media (prefers-reduced-motion: reduce) {
   .mandala-spin { animation: none; }
 }
+
+/* Loader: the artwork stays hidden until its pictures have loaded, then
+   fades in together (MughalFrame sets data-ready) - no pieces popping in */
+[data-loader-root] > * {
+  opacity: 0;
+  transition: opacity 0.35s ease-out;
+}
+[data-loader-root][data-ready] > * {
+  opacity: 1;
+}

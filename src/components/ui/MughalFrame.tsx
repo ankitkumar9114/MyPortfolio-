@@ -97,6 +97,11 @@ const goldenBurstReach = () => (burstReach ??= flightAt(GOLD_BURST_S, "golden").
 // reached, forwards or backwards; nothing is torn down at the end.
 export default function MughalFrame({ progress = 0, reveal = LOADER_REVEAL, onReveal, onDone, scrub }: { progress?: number; reveal?: LoaderReveal; onReveal?: () => void; onDone?: () => void; scrub?: number }) {
   const [size, setSize] = useState({ w: 1440, h: 900 });
+  // Until the screen is measured, only the plain teal backdrop shows (no
+  // images requested at the wrong size, nothing jumping into place); once
+  // measured, the artwork for this screen loads and the flight waits for it.
+  const [measured, setMeasured] = useState(false);
+  const [artReady, setArtReady] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
   const fxRef = useRef<HTMLCanvasElement>(null);
   const mandalaImgRef = useRef<HTMLImageElement>(null);
@@ -121,12 +126,18 @@ export default function MughalFrame({ progress = 0, reveal = LOADER_REVEAL, onRe
     targetRef.current = progress;
   }, [progress]);
   useEffect(() => {
-    const fit = () => setSize({ w: window.innerWidth, h: window.innerHeight });
+    const fit = () => {
+      setSize({ w: window.innerWidth, h: window.innerHeight });
+      setMeasured(true);
+    };
     fit();
     window.addEventListener("resize", fit);
     return () => window.removeEventListener("resize", fit);
   }, []);
   const { w, h } = size;
+  // phones get lighter copies of the big pictures (-sm.webp, ~4x smaller)
+  const small = Math.min(w, h) < 600;
+  const img = (name: string) => `/images/${name}${small ? "-sm" : ""}.webp`;
   const k = BAND / TILE.h; // the band is BAND px thick on every screen; tiles and corners scale with it
   const cw = CORNER.w * k, ch = CORNER.h * k, t = TILE.h * k;
 
@@ -172,12 +183,12 @@ export default function MughalFrame({ progress = 0, reveal = LOADER_REVEAL, onRe
   // shadow; their box is the layer's export bounds in design units
   const pieces: Piece[] = [
     // red flower plant (40% opacity is baked in): bottom centre, and the same turned upside down at the top centre
-    { src: "loader-flower-plant.webp", x: C(262), y: B(645), w: 917, h: 379 },
-    { src: "loader-flower-plant.webp", x: C(262), y: T(0), w: 917, h: 379, rotate: 180 },
-    { src: "loader-cloud-left.webp", x: L(-210), y: T(179), w: 551, h: 232 }, // cloud 3, half out the left side
-    { src: "loader-cloud-right.webp", x: R(1036), y: T(333), w: 810, h: 415 }, // cloud 1, under Claude
-    { src: "loader-cloud-bottom.webp", x: L(15), y: B(765.77), w: 742.5, h: 258.5 }, // cloud 1 again, under Ankit
-    { src: "loader-cloud-top.webp", x: C(719), y: T(-56), w: 537, h: 226.5 }, // cloud 2, top
+    { src: img("loader-flower-plant"), x: C(262), y: B(645), w: 917, h: 379 },
+    { src: img("loader-flower-plant"), x: C(262), y: T(0), w: 917, h: 379, rotate: 180 },
+    { src: img("loader-cloud-left"), x: L(-210), y: T(179), w: 551, h: 232 }, // cloud 3, half out the left side
+    { src: img("loader-cloud-right"), x: R(1036), y: T(333), w: 810, h: 415 }, // cloud 1, under Claude
+    { src: img("loader-cloud-bottom"), x: L(15), y: B(765.77), w: 742.5, h: 258.5 }, // cloud 1 again, under Ankit
+    { src: img("loader-cloud-top"), x: C(719), y: T(-56), w: 537, h: 226.5 }, // cloud 2, top
   ];
   // the flying figures (drawn over the frame, as in Figma): image size,
   // centre, Figma tilt, shadow, and where the shoulder and the pointing
@@ -192,7 +203,7 @@ export default function MughalFrame({ progress = 0, reveal = LOADER_REVEAL, onRe
     // eslint-disable-next-line @next/next/no-img-element -- decorative
     <img
       key={i}
-      src={`/images/${p.src}`}
+      src={p.src}
       alt=""
       aria-hidden="true"
       draggable={false}
@@ -387,8 +398,38 @@ export default function MughalFrame({ progress = 0, reveal = LOADER_REVEAL, onRe
   // towards the real progress (never faster than the flight time), so jumps
   // in loading never make the figures jerk.
   const scrubbing = scrub !== undefined;
+  // the artwork for this screen, loaded first and at high priority; the
+  // flight starts once the characters and clouds are in (or after 4 s at most)
   useEffect(() => {
-    if (scrubbing) return;
+    if (!measured) return;
+    let done = false;
+    const go = () => {
+      if (!done) setArtReady(true);
+      done = true;
+    };
+    const names = ["flying-ankit", "flying-claude", "loader-cloud-left", "loader-cloud-right", "loader-cloud-bottom", "loader-cloud-top", "loader-flower-plant", "corner-plant"];
+    const loads = names.map(
+      (n) =>
+        new Promise<void>((res) => {
+          const im = new Image();
+          im.fetchPriority = "high";
+          im.decoding = "async";
+          im.onload = () => im.decode().then(() => res(), () => res());
+          im.onerror = () => res();
+          im.src = img(n);
+        }),
+    );
+    Promise.all(loads).then(go);
+    const t = window.setTimeout(go, 4000);
+    return () => {
+      done = true;
+      window.clearTimeout(t);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- img() follows `small`
+  }, [measured, small]);
+
+  useEffect(() => {
+    if (scrubbing || !artReady) return;
     let raf = 0, last = 0, start = 0;
     const st: FlightState = { shown: 0, follow: 0 };
     const tick = (now: number) => {
@@ -410,7 +451,7 @@ export default function MughalFrame({ progress = 0, reveal = LOADER_REVEAL, onRe
     raf = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(raf);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- the helpers only read refs and layout
-  }, [placed, reveal, scrubbing]);
+  }, [placed, reveal, scrubbing, artReady]);
 
   // The scrubbed preview: show the moment `scrub` seconds from the start
   const endingRef = useRef<Tl | null>(null);
@@ -445,14 +486,16 @@ export default function MughalFrame({ progress = 0, reveal = LOADER_REVEAL, onRe
       style={{ left, top, width: cw, height: ch, transform: flip }}
     />
   );
+  // not measured yet (before the page's scripts run): just the backdrop
+  if (!measured) return <div className="fixed inset-0 z-[1000]" style={{ background: "#002F2A url('/images/loader-bg-teal.webp') center / cover" }} aria-label="Loading" role="status" />;
   return (
     <>
-      <div ref={rootRef} className="fixed inset-0 z-[1000] overflow-hidden" style={{ background: "#002F2A url('/images/loader-bg-teal.webp') center / cover" }}>
+      <div ref={rootRef} data-loader-root="" data-ready={artReady || scrubbing ? "" : undefined} className="fixed inset-0 z-[1000] overflow-hidden" style={{ background: "#002F2A url('/images/loader-bg-teal.webp') center / cover" }}>
       {/* corner plant panels */}
       {/* eslint-disable-next-line @next/next/no-img-element -- decorative */}
-      <img src="/images/corner-plant.webp" alt="" aria-hidden="true" draggable={false} className="pointer-events-none absolute select-none" style={{ left: inset, top: inset, width: pw, height: ph }} />
+      <img src={img("corner-plant")} alt="" aria-hidden="true" draggable={false} className="pointer-events-none absolute select-none" style={{ left: inset, top: inset, width: pw, height: ph }} />
       {/* eslint-disable-next-line @next/next/no-img-element -- decorative */}
-      <img src="/images/corner-plant.webp" alt="" aria-hidden="true" draggable={false} className="pointer-events-none absolute select-none" style={{ left: w - inset - pw, top: inset, width: pw, height: ph, transform: "scaleX(-1)" }} />
+      <img src={img("corner-plant")} alt="" aria-hidden="true" draggable={false} className="pointer-events-none absolute select-none" style={{ left: w - inset - pw, top: inset, width: pw, height: ph, transform: "scaleX(-1)" }} />
       {/* red flower plants and clouds */}
       {pieces.map(pieceImg)}
       {/* the mandala (raw-images/mandala-lines.svg, in the reference painting's
@@ -529,10 +572,10 @@ export default function MughalFrame({ progress = 0, reveal = LOADER_REVEAL, onRe
         </span>
       </div>
       {/* flying Ankit and flying Claude, over the frame */}
-      {figure("/images/flying-ankit.webp", placed.ankit, ankit.shadow, ankitRef)}
-      {figure("/images/flying-claude.webp", placed.claude, claude.shadow, claudeRef)}
-      {reveal === "golden" && figureLight("/images/flying-ankit.webp", placed.ankit, ankit.tip, ankitGlowRef)}
-      {reveal === "golden" && figureLight("/images/flying-claude.webp", placed.claude, claude.tip, claudeGlowRef)}
+      {figure(img("flying-ankit"), placed.ankit, ankit.shadow, ankitRef)}
+      {figure(img("flying-claude"), placed.claude, claude.shadow, claudeRef)}
+      {reveal === "golden" && figureLight(img("flying-ankit"), placed.ankit, ankit.tip, ankitGlowRef)}
+      {reveal === "golden" && figureLight(img("flying-claude"), placed.claude, claude.tip, claudeGlowRef)}
       </div>
       {/* the golden energy sequence (goldenReveal.ts): a transparent three.js
           canvas over the loader and the site */}
