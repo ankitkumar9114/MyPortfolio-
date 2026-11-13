@@ -16,7 +16,7 @@
 let done = false;
 const EVENT_NAME = "preloader-complete";
 
-/** Called once by Preloader.tsx when it finishes (or skips itself under
+/** Called once by the loader (MughalLoader) when it finishes (or skips itself under
  * reduced motion) — safe to call more than once, only the first call does
  * anything. */
 export function markPreloaderComplete() {

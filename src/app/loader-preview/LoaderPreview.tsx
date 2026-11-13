@@ -3,17 +3,12 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import MughalFrame, { flightAt } from "@/components/ui/MughalFrame";
 import { GOLDEN_DURATION } from "@/components/ui/goldenReveal";
-import { LOADER_REVEAL, LOADER_REVEAL_NAMES, type LoaderReveal } from "@/lib/loaderReveal";
-
-const ENDING: Record<LoaderReveal, number> = { golden: GOLDEN_DURATION };
 
 // The loader over the real site (an iframe of the home page with ?noloader,
 // so the site's own loader doesn't play inside it), as one timeline from the
 // start to the end of the reveal: play it, pause it, or drag to any moment,
-// forwards or backwards. Pick an ending to see it; the site's active one is
-// set in lib/loaderReveal.ts.
+// forwards or backwards.
 export default function LoaderPreview() {
-  const [reveal, setReveal] = useState<LoaderReveal>(LOADER_REVEAL);
   const [run, setRun] = useState(0);
   const [time, setTimeState] = useState(0); // s from the start
   const timeRef = useRef(0);
@@ -25,8 +20,8 @@ export default function LoaderPreview() {
   // playing from the start runs the real loader (its flight on the compositor,
   // exactly as on the site); pausing or dragging switches to frame-by-frame scrubbing
   const [live, setLive] = useState(true);
-  const { touchAt, endAt } = flightAt(0, reveal);
-  const total = endAt + ENDING[reveal];
+  const { touchAt, endAt } = flightAt(0);
+  const total = endAt + GOLDEN_DURATION;
 
   // playing: move the clock on in real time
   useEffect(() => {
@@ -53,13 +48,6 @@ export default function LoaderPreview() {
     setPlaying(false);
   }, [total]);
 
-  const choose = (r: LoaderReveal) => {
-    setReveal(r);
-    setRun((n) => n + 1);
-    setTime(0);
-    setLive(true);
-    setPlaying(true);
-  };
   const replay = () => {
     setRun((n) => n + 1);
     setTime(0);
@@ -72,23 +60,12 @@ export default function LoaderPreview() {
     <>
       <iframe src="/?noloader" title="Site" className="fixed inset-0 h-full w-full border-0" />
       {live ? (
-        <MughalFrame key={`${reveal}-${run}-live`} reveal={reveal} progress={100} onDone={finishLive} />
+        <MughalFrame key={`${run}-live`} progress={100} onDone={finishLive} />
       ) : (
-        <MughalFrame key={`${reveal}-${run}-scrub`} reveal={reveal} progress={100} scrubRef={timeRef} />
+        <MughalFrame key={`${run}-scrub`} progress={100} scrubRef={timeRef} />
       )}
       <div className="fixed left-1/2 top-3 z-[1100] flex w-[min(640px,calc(100vw-24px))] -translate-x-1/2 flex-col gap-2 rounded-2xl bg-black/75 p-2 font-[family-name:var(--font-manrope)] text-[13px] text-white shadow-lg backdrop-blur">
         <div className="flex justify-center gap-2">
-          {(Object.keys(LOADER_REVEAL_NAMES) as LoaderReveal[]).map((r) => (
-            <button
-              key={r}
-              type="button"
-              onClick={() => choose(r)}
-              className={`rounded-full px-4 py-1.5 font-semibold transition-colors ${reveal === r ? "bg-[#D9A23A] text-black" : "hover:bg-white/15"}`}
-            >
-              {LOADER_REVEAL_NAMES[r]}
-              {r === LOADER_REVEAL ? " (on site)" : ""}
-            </button>
-          ))}
           <button type="button" onClick={replay} className="rounded-full px-4 py-1.5 font-semibold hover:bg-white/15">
             ↻ Replay
           </button>

@@ -1,6 +1,6 @@
 // What a full-screen loader waits for: every image the first screens of the
 // page use on this screen size, loaded and decoded up front. Shared by the
-// loaders (MughalLoader, and the earlier truck-art Preloader).
+// loader (MughalLoader).
 
 // Loads AND decodes an image, so it's ready to paint the instant it scrolls
 // into view (decoding a big image mid-scroll is what causes jank).
