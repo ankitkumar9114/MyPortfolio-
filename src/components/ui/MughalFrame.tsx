@@ -305,6 +305,8 @@ export default function MughalFrame({ progress = 0, reveal = LOADER_REVEAL, onRe
         const canvas = fxRef.current;
         if (!alive || !canvas) return;
         fx.current = createGoldenReveal(kit, canvas, window.innerWidth, window.innerHeight, gsap);
+        // the three.js energy ball takes over from the CSS one (which stays as the fallback)
+        if (fx.current && orbRef.current) orbRef.current.style.visibility = "hidden";
       })
       .catch(() => {});
     return () => {
@@ -342,6 +344,7 @@ export default function MughalFrame({ progress = 0, reveal = LOADER_REVEAL, onRe
     if (!orb) return;
     orb.style.opacity = "1";
     const g = Math.min(1, Math.max(0, (k - 0.78) / (goldenBurstReach() - 0.78))); // grows only once the hands are this close, full size at the explosion
+    fx.current?.setCharge(g);
     orb.style.transform = `scale(${r2(0.5 + 2.4 * g * g * (3 - 2 * g))})`;
     if (orbHaloRef.current) orbHaloRef.current.style.opacity = String(r2(0.35 + 0.65 * k));
     if (orbAttractRef.current) orbAttractRef.current.style.opacity = String(r2(Math.min(1, Math.max(0, (k - 0.05) / 0.3))));

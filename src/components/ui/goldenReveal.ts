@@ -53,7 +53,7 @@ export const waveEdge = (a: number, t: number) =>
 
 // the timeline (s)
 const SPARK_END = 0.06;
-const REVEAL_START = 0.44; // the site starts to show 0.44 s after the explosion (2.41 s from the start)
+const REVEAL_START = 0.11; // the site starts to show 0.11 s after the explosion (2.08 s from the start)
 const REVEAL_END = REVEAL_START + 1.2;
 const END = REVEAL_END + 0.5;
 export const GOLDEN_DURATION = END; // s, the touch to the end
@@ -83,6 +83,8 @@ export type GoldenReveal = {
   // `scrub`: the timeline starts paused and is never torn down at the end,
   // so it can be moved to any moment (the loader preview); returns it
   play: (hooks: Hooks, opts?: { scrub?: boolean }) => ReturnType<typeof import("gsap").gsap.timeline>;
+  // before the explosion: how grown the energy ball is (0 small .. 1 full)
+  setCharge: (k: number) => void;
   resize: (w: number, h: number) => void;
   dispose: () => void;
 };
@@ -463,6 +465,73 @@ export function createGoldenReveal(kit: Kit, canvas: HTMLCanvasElement, width: n
   dissolve.visible = false;
   scene.add(dissolve);
 
+  // --- 0. the energy ball before the explosion: a small, bright, irregular
+  // ball of light (its outline wobbling with noise, never a perfect sphere),
+  // thin rays flickering out of it, sparkles and a warm glow - one quad
+  const ballMat = keep(
+    new THREE.ShaderMaterial({
+      uniforms: { uTime: { value: 0 }, uCharge: { value: 0 }, uA: { value: 1 } },
+      vertexShader: `varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
+      fragmentShader: /* glsl */ `
+        varying vec2 vUv; uniform float uTime, uCharge, uA;
+        float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453123); }
+        float noise(vec2 p) {
+          vec2 i = floor(p), f = fract(p); vec2 u = f * f * (3.0 - 2.0 * f);
+          return mix(mix(hash(i), hash(i + vec2(1, 0)), u.x), mix(hash(i + vec2(0, 1)), hash(i + vec2(1, 1)), u.x), u.y);
+        }
+        float fbm(vec2 p) { float v = 0.0, a = 0.5; for (int i = 0; i < 4; i++) { v += a * noise(p); p = p * 2.03 + 7.1; a *= 0.5; } return v; }
+        void main() {
+          vec2 p = (vUv - 0.5) * 2.0;          // -1..1 across the quad; the ball's radius is ~0.25
+          float r = length(p), a = atan(p.y, p.x);
+          float t = uTime * (1.0 + uCharge);
+          // a lumpy, shifting outline
+          float lump = fbm(vec2(cos(a), sin(a)) * 1.6 + vec2(t * 0.9, -t * 0.7));
+          float R = 0.3 * (0.7 + 0.65 * lump);
+          float body = smoothstep(R * 1.25, R * 0.35, r);
+          float core = exp(-r / (R * 0.45));
+          // thin rays of light, flickering
+          float rays = pow(noise(vec2(a * 7.0, t * 2.4)), 5.0) * 1.6 + pow(noise(vec2(a * 15.0 + 3.0, -t * 3.1)), 8.0) * 1.2;
+          rays *= smoothstep(0.8, R, r) * (0.25 + 0.45 * uCharge);
+          // the warm glow
+          float glow = exp(-r * 2.4) * 0.6;
+          // sparkles drifting in the glow
+          vec2 g = p * 12.0 + vec2(t * 0.2, -t * 0.35);
+          vec2 id = floor(g), f = fract(g) - 0.5;
+          float h = hash(id);
+          float spark = step(0.78, h) * smoothstep(0.16, 0.0, length(f + (vec2(hash(id + 3.1), hash(id + 7.7)) - 0.5) * 0.6))
+                      * (0.5 + 0.5 * sin(t * 5.0 + h * 40.0)) * smoothstep(0.95, 0.3, r);
+          float light = (body * (0.7 + 0.4 * fbm(p * 6.0 + t)) + core * 0.8 + rays + glow) * 0.85;
+          // warm gold, only the very centre near-white; sparkles amber-orange
+          vec3 c = mix(vec3(0.95, 0.62, 0.2), vec3(1.0, 0.84, 0.38), clamp(light, 0.0, 1.0));
+          c = mix(c, vec3(1.0, 0.95, 0.74), clamp(core * 0.8, 0.0, 1.0));
+          float sp = spark * 0.85;
+          c = (c * light + vec3(1.0, 0.66, 0.25) * sp) / max(light + sp, 0.001);
+          // fade out well inside the quad (no square edge)
+          float al = clamp(light + sp, 0.0, 1.0) * uA * smoothstep(1.0, 0.65, r);
+          c = pow(c, vec3(2.2)); // to linear: the render pipeline converts back to sRGB
+          gl_FragColor = vec4(c * al, al);
+        }`,
+      transparent: true,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending,
+    }),
+  );
+  const ball = new THREE.Mesh(keep(new THREE.PlaneGeometry(1, 1)), ballMat);
+  ball.position.z = 4;
+  scene.add(ball);
+  // its size on screen (the quad is 4x the ball): small at first, full at the explosion
+  const U = () => (Math.min(w, h) * 0.512) / 442; // follows the mandala's size
+  let charge = 0;
+  const placeBall = (time: number, grow = 1, alpha = 1) => {
+    const e = charge * charge * (3 - 2 * charge);
+    const R = (11 + 27 * e) * U() * grow;
+    ball.scale.set(R * 4, R * 4, 1);
+    ballMat.uniforms.uTime.value = time;
+    ballMat.uniforms.uCharge.value = charge;
+    ballMat.uniforms.uA.value = alpha;
+    ball.visible = alpha > 0.01;
+  };
+
   // compile every shader now (before the touch), so the first frames don't stall
   renderer.compile(scene, camera);
 
@@ -485,11 +554,21 @@ export function createGoldenReveal(kit: Kit, canvas: HTMLCanvasElement, width: n
 
   let raf = 0, alive = true;
   let tl: ReturnType<typeof gsap.timeline> | null = null;
+  // before the explosion only the ball is drawn
+  let idle = 0;
+  const idleFrame = (now: number) => {
+    if (!alive) return;
+    placeBall(now / 1000);
+    composer.render();
+    idle = requestAnimationFrame(idleFrame);
+  };
+  idle = requestAnimationFrame(idleFrame);
 
   const dispose = () => {
     if (!alive) return;
     alive = false;
     cancelAnimationFrame(raf);
+    cancelAnimationFrame(idle);
     tl?.kill();
     trailGroup.children.forEach((c) => (c as THREE_NS.Mesh).geometry.dispose());
     dissolveGeo.dispose();
@@ -501,6 +580,7 @@ export function createGoldenReveal(kit: Kit, canvas: HTMLCanvasElement, width: n
   };
 
   const play = (hooks: Hooks, opts: { scrub?: boolean } = {}) => {
+    cancelAnimationFrame(idle); // the explosion's loop draws the ball from now on
     const s = S();
     // everything the timeline animates
     const st = { spark: 0, hot: 0, light: 0, rings: 0, trails: 0, shock: 0, shockA: 0, wave: 0, waveA: 0, mandala: 0, fade: 1 };
@@ -518,6 +598,8 @@ export function createGoldenReveal(kit: Kit, canvas: HTMLCanvasElement, width: n
     const frame = () => {
       if (!alive) return;
       const t = tl ? tl.time() : 0; // the timeline is the one clock, so every part stays in step
+      // the ball swells into the explosion and is gone (still there at t = 0, when scrubbing back)
+      placeBall(performance.now() / 1000, 1 + 3 * Math.min(1, t / 0.12), 1 - Math.min(1, t / 0.12));
       // spark and light
       const sparkSize = (30 + 170 * st.spark + 260 * st.light) * s;
       glow.scale.set(sparkSize * 2, sparkSize * 2, 1);
@@ -596,5 +678,12 @@ export function createGoldenReveal(kit: Kit, canvas: HTMLCanvasElement, width: n
     return tl;
   };
 
-  return { play, resize, dispose };
+  return {
+    play,
+    resize,
+    dispose,
+    setCharge: (k: number) => {
+      charge = Math.min(1, Math.max(0, k));
+    },
+  };
 }
