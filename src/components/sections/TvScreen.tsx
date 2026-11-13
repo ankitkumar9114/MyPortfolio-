@@ -217,6 +217,10 @@ function useCachedVideoSrc(src: string, enabled: boolean) {
 function ChannelVideo({ src: rawSrc, on, playing, volume }: { src: string; on: boolean; playing: boolean; volume: number }) {
   const src = useCachedVideoSrc(rawSrc, on);
   const ref = useRef<HTMLVideoElement>(null);
+  // the video whose first picture is showing; until then the set is
+  // "tuning" (snow and a blinking readout) instead of a black screen
+  const [shownSrc, setShownSrc] = useState<string | null>(null);
+  const tuning = on && (!src || shownSrc !== src);
   useEffect(() => {
     const v = ref.current;
     if (!v) return;
@@ -270,16 +274,66 @@ function ChannelVideo({ src: rawSrc, on, playing, volume }: { src: string; on: b
       cancelAnimationFrame(raf);
     };
   }, []);
+  const showing = () => {
+    const v = ref.current;
+    if (v && src && v.readyState >= 2) setShownSrc(src);
+  };
   return (
-    <video
-      ref={ref}
-      src={src}
-      muted
-      loop
-      playsInline
-      preload="metadata"
-      className="absolute inset-0 h-full w-full object-cover"
-    />
+    <>
+      <video
+        ref={ref}
+        src={src}
+        muted
+        loop
+        playsInline
+        preload="metadata"
+        onLoadedData={showing}
+        onPlaying={showing}
+        onCanPlay={showing}
+        className="absolute inset-0 h-full w-full object-cover"
+      />
+      {tuning && <TuningScreen />}
+    </>
+  );
+}
+
+// An old set finding the signal, while the video loads: dim analog snow, a
+// slow rolling bar, and a blinking "TUNING" readout in the on-screen-display
+// green. Cheap: a small canvas redrawn every other frame.
+function TuningScreen() {
+  const ref = useRef<HTMLCanvasElement>(null);
+  const reduceMotion = useReducedMotion();
+  useEffect(() => {
+    const c = ref.current;
+    const ctx = c?.getContext("2d");
+    if (!c || !ctx) return;
+    const img = ctx.createImageData(c.width, c.height);
+    let raf = 0, frame = 0;
+    const draw = () => {
+      if (frame++ % 2 === 0) {
+        for (let i = 0; i < img.data.length; i += 4) {
+          const v = 40 + Math.random() * 150;
+          img.data[i] = img.data[i + 1] = img.data[i + 2] = v;
+          img.data[i + 3] = 255;
+        }
+        ctx.putImageData(img, 0, 0);
+      }
+      if (!reduceMotion) raf = requestAnimationFrame(draw);
+    };
+    draw();
+    return () => cancelAnimationFrame(raf);
+  }, [reduceMotion]);
+  return (
+    <div className="absolute inset-0 overflow-hidden bg-black" aria-hidden="true">
+      <canvas ref={ref} width={120} height={75} className="absolute inset-0 h-full w-full" style={{ imageRendering: "pixelated", opacity: 0.38 }} />
+      {!reduceMotion && <div className="tv-roll absolute inset-x-0 h-[22%]" style={{ background: "linear-gradient(to bottom, transparent, rgba(255,255,255,0.10), transparent)" }} />}
+      <div className="absolute inset-0 flex flex-col items-center justify-center gap-[1.4cqw]">
+        <span className={reduceMotion ? "" : "tv-blink"} style={{ ...OSD_TEXT, fontSize: "4.2cqw" }}>
+          TUNING…
+        </span>
+        <span style={{ ...OSD_TEXT, fontSize: "2.1cqw", opacity: 0.8 }}>PLEASE WAIT</span>
+      </div>
+    </div>
   );
 }
 
