@@ -806,6 +806,10 @@ export default function TvOnCabinet({ children }: { children: ReactNode }) {
               }}
             />
           )}
+          {/* The TV itself: an explicit z 0 (positioned), so it's always in
+              front of everything behind it - the star (-10), the dark
+              backdrop (-9), the screen (-8), the cloth panel (-6) and the
+              glass (-5) - even for a frame while the zoom starts. */}
           {/* eslint-disable-next-line @next/next/no-img-element -- large decorative raster sized via CSS */}
           <img
             src="/images/tv-with-table.webp"
@@ -813,7 +817,7 @@ export default function TvOnCabinet({ children }: { children: ReactNode }) {
             width={2000}
             height={1128}
             loading="lazy"
-            className="block h-auto w-full select-none"
+            className="relative z-0 block h-auto w-full select-none"
           />
           <TvPowerContext.Provider value={{ ...tv.remote, autoPress }}>
             {children}
