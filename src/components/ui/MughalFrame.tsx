@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { memo, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { PLANT } from "./cornerPlantEdge";
 import { MANDALA_EDGE, MANDALA_TIPS } from "./mandalaEdge";
 import { gsap } from "@/lib/gsap";
@@ -110,7 +110,10 @@ const goldenBurstReach = () => (burstReach ??= flightAt(GOLD_BURST_S, "golden").
 // `scrub` seconds from the start - before the touch worked out from
 // flightAt, after it by moving the ending's timeline - so any frame can be
 // reached, forwards or backwards; nothing is torn down at the end.
-export default function MughalFrame({ progress = 0, reveal = LOADER_REVEAL, onReveal, onRevealed90, onDone, scrub }: { progress?: number; reveal?: LoaderReveal; onReveal?: () => void; onRevealed90?: () => void; onDone?: () => void; scrub?: number }) {
+// `progressRef`: the same, read every frame without re-rendering (the site's
+// loader uses this, so loading progress never re-renders the whole frame).
+export default memo(MughalFrame);
+function MughalFrame({ progress = 0, progressRef, reveal = LOADER_REVEAL, onReveal, onRevealed90, onDone, scrub }: { progress?: number; progressRef?: { current: number }; reveal?: LoaderReveal; onReveal?: () => void; onRevealed90?: () => void; onDone?: () => void; scrub?: number }) {
   const [size, setSize] = useState({ w: 1440, h: 900 });
   // Until the screen is measured, only the plain teal backdrop shows (no
   // images requested at the wrong size, nothing jumping into place); once
@@ -120,7 +123,8 @@ export default function MughalFrame({ progress = 0, reveal = LOADER_REVEAL, onRe
   const rootRef = useRef<HTMLDivElement>(null);
   const fxRef = useRef<HTMLCanvasElement>(null);
   const mandalaImgRef = useRef<HTMLImageElement>(null);
-  const mandalaLineRef = useRef<SVGSVGElement>(null);
+  const mandalaLitRef = useRef<HTMLImageElement>(null); // the glowing gold copy, faded in by the explosion
+  const mandalaWrapRef = useRef<HTMLDivElement>(null); // the one spinning layer
   // the mandala ending's pieces
   const boxRef = useRef<HTMLDivElement>(null);
   // the golden ending's warm light on the two characters
@@ -345,7 +349,7 @@ export default function MughalFrame({ progress = 0, reveal = LOADER_REVEAL, onRe
         height: r2(g.fh),
         transformOrigin: `${r2(g.sx)}px ${r2(g.sy)}px`,
         transform: transformAt(g, 0),
-        filter: `drop-shadow(${shadow})`,
+        // (its shadow is baked into the image: no filter on a moving layer)
       }}
     />
   );
@@ -381,6 +385,7 @@ export default function MughalFrame({ progress = 0, reveal = LOADER_REVEAL, onRe
   const golden = reveal === "golden";
   // the figures, their light and the number at a given point of the flight
   const explodedRef = useRef(false);
+  const lastCut = useRef(-1);
   const showFlight = (shown: number) => {
     const reach = shown / 100;
     if (ankitRef.current) ankitRef.current.style.transform = transformAt(placed.ankit, reach);
@@ -402,11 +407,8 @@ export default function MughalFrame({ progress = 0, reveal = LOADER_REVEAL, onRe
     if (ankitGlowRef.current) ankitGlowRef.current.style.opacity = "0";
     if (claudeGlowRef.current) claudeGlowRef.current.style.opacity = "0";
     // the mandala starts to light up (opacity only - no filters)
-    for (const el of [mandalaImgRef.current, mandalaLineRef.current]) {
-      if (!el) continue;
-      el.style.opacity = String(r2(0.3 + 0.35 * k));
-      el.style.filter = "";
-    }
+    if (mandalaImgRef.current) mandalaImgRef.current.style.opacity = String(r2(0.3 + 0.35 * k));
+    if (mandalaLitRef.current) mandalaLitRef.current.style.opacity = "0";
   };
   // the loader is cut along the golden wave's ragged edge (the same
   // formula the shader draws), so the site shows inside it
@@ -415,14 +417,20 @@ export default function MughalFrame({ progress = 0, reveal = LOADER_REVEAL, onRe
     if (!root) return;
     if (!wave) {
       root.style.clipPath = "";
+      lastCut.current = -1;
       return;
     }
     // the loader's actual size now (it may have been resized since the
     // explosion started), so the opening is always centred on the screen
     const W = root.clientWidth || w, H = root.clientHeight || h;
+    // skip frames where the opening has barely moved (a new clip-path makes
+    // the browser repaint the loader)
+    if (Math.abs(wave.radius - lastCut.current) < 0.75) return;
+    lastCut.current = wave.radius;
     const cx = W / 2, cy = H / 2, pts: string[] = [];
-    for (let i = 0; i < 160; i++) {
-      const a = (i / 160) * Math.PI * 2, r = Math.max(0, wave.radius + wave.rag * waveEdge(a, wave.time));
+    const N = 64; // enough points for the wavy edge, without a heavy path
+    for (let i = 0; i < N; i++) {
+      const a = (i / N) * Math.PI * 2, r = Math.max(0, wave.radius + wave.rag * waveEdge(a, wave.time));
       pts.push(`${r2(cx + Math.cos(a) * r)} ${r2(cy + Math.sin(a) * r)}`);
     }
     root.style.clipPath = `path(evenodd, "M0 0H${W}V${H}H0Z M${pts.join("L")}Z")`;
@@ -438,11 +446,10 @@ export default function MughalFrame({ progress = 0, reveal = LOADER_REVEAL, onRe
     const light = String(r2(Math.min(1, g) * 0.9));
     if (ankitGlowRef.current) ankitGlowRef.current.style.opacity = light;
     if (claudeGlowRef.current) claudeGlowRef.current.style.opacity = light;
-    for (const el of [mandalaImgRef.current, mandalaLineRef.current]) {
-      if (!el) continue;
-      el.style.opacity = String(r2(0.65 + 0.35 * g));
-      el.style.filter = g > 0.01 ? `brightness(${r2(1 + 0.9 * g)}) drop-shadow(0 0 ${r2(14 * g)}px rgba(242, 181, 68, ${r2(0.85 * g)}))` : "";
-    }
+    // the mandala lit up: the glowing gold copy faded in over it (opacity
+    // only - no filters re-applied every frame)
+    if (mandalaImgRef.current) mandalaImgRef.current.style.opacity = String(r2(0.65 + 0.35 * g));
+    if (mandalaLitRef.current) mandalaLitRef.current.style.opacity = String(r2(Math.min(1, g)));
   };
   // start the ending (paused, and kept at the end, when scrubbing)
   type Tl = { time: () => number; seek: (t: number, suppress?: boolean) => unknown; duration: () => number };
@@ -477,7 +484,7 @@ export default function MughalFrame({ progress = 0, reveal = LOADER_REVEAL, onRe
       if (!done) setArtReady(true);
       done = true;
     };
-    const names = w <= PHONE_MAX_W ? ["flying-ankit", "flying-claude", "loader-cloud-left", "corner-plant"] : ["flying-ankit", "flying-claude", "loader-cloud-left", "loader-cloud-right", "loader-cloud-bottom", "loader-cloud-top", "loader-flower-plant", "corner-plant"];
+    const names = w <= PHONE_MAX_W ? ["flying-ankit-s", "flying-claude-s", "loader-cloud-left", "corner-plant"] : ["flying-ankit-s", "flying-claude-s", "loader-cloud-left", "loader-cloud-right", "loader-cloud-bottom", "loader-cloud-top", "loader-flower-plant", "corner-plant"];
     const extra = w <= PHONE_MAX_W ? ["/images/loader-cloud-top-m.webp", "/images/loader-cloud-flat-m.webp", "/images/loader-flower-plant-m.webp"] : [];
     const loads = [...names.map(img), ...extra].map(
       (src) =>
@@ -507,7 +514,7 @@ export default function MughalFrame({ progress = 0, reveal = LOADER_REVEAL, onRe
       if (!start) start = last = now;
       const dt = Math.min(0.05, (now - last) / 1000);
       last = now;
-      flightStep(st, (now - start) / 1000, dt, Math.min(100, Math.max(0, targetRef.current ?? 0)), reveal);
+      flightStep(st, (now - start) / 1000, dt, Math.min(100, Math.max(0, progressRef ? progressRef.current : (targetRef.current ?? 0))), reveal);
       // golden: if three.js is still downloading (slow first visit), hold
       // just short of the explosion for it (up to HOLD_FOR_FX_S) rather than
       // skipping the explosion
@@ -585,14 +592,24 @@ export default function MughalFrame({ progress = 0, reveal = LOADER_REVEAL, onRe
           swells in the mandala ending, which also lights a bright-gold copy
           and draws the outline in gold. */}
       <div ref={boxRef} className="pointer-events-none absolute" style={mandala}>
-        {/* eslint-disable-next-line @next/next/no-img-element -- decorative SVG */}
-        <img ref={mandalaImgRef} src={`${P}mandala.svg`} alt="" aria-hidden="true" draggable={false} className="mandala-spin absolute inset-0 h-full w-full select-none" style={{ opacity: 0.3 }} />
-        <svg ref={mandalaLineRef} aria-hidden="true" className="mandala-spin absolute inset-0 h-full w-full overflow-visible" viewBox="0 0 1 1" preserveAspectRatio="none" style={{ opacity: 0.3, display: phone ? "none" : undefined }}>
-          <path d={MANDALA_EDGE} fill="none" stroke="#B9823A" strokeWidth={0.009} strokeLinecap="round" strokeDasharray="0.0001 0.021" />
-          {MANDALA_TIPS.map(([x, y]) => (
-            <circle key={`${x},${y}`} cx={x} cy={y} r={0.008} fill="#B9823A" />
-          ))}
-        </svg>
+        {/* one spinning layer: the mandala, its dotted outline (not on
+            phones) and the glowing copy the explosion fades in */}
+        <div ref={mandalaWrapRef} className="mandala-spin absolute inset-0 will-change-transform">
+          {/* eslint-disable-next-line @next/next/no-img-element -- decorative SVG */}
+          <img ref={mandalaImgRef} src={`${P}mandala.svg`} alt="" aria-hidden="true" draggable={false} className="absolute inset-0 h-full w-full max-w-none select-none" style={{ opacity: 0.3 }} />
+          {!phone && (
+            <svg aria-hidden="true" className="absolute inset-0 h-full w-full overflow-visible" viewBox="0 0 1 1" preserveAspectRatio="none" style={{ opacity: 0.3 }}>
+              <path d={MANDALA_EDGE} fill="none" stroke="#B9823A" strokeWidth={0.009} strokeLinecap="round" strokeDasharray="0.0001 0.021" />
+              {MANDALA_TIPS.map(([x, y]) => (
+                <circle key={`${x},${y}`} cx={x} cy={y} r={0.008} fill="#B9823A" />
+              ))}
+            </svg>
+          )}
+          {reveal === "golden" && (
+            // eslint-disable-next-line @next/next/no-img-element -- decorative SVG (its viewBox has a margin for the glow)
+            <img ref={mandalaLitRef} src={`${P}mandala-lit.svg`} alt="" aria-hidden="true" draggable={false} className="absolute max-w-none select-none" style={{ left: "-3.05%", top: "-3.05%", width: "106.1%", height: "106.1%", opacity: 0 }} />
+          )}
+        </div>
       </div>
       <svg width={w} height={h} viewBox={`0 0 ${w} ${h}`} className="absolute inset-0 block" aria-hidden="true">
         {/* the band: a gradient from the outer edge (#710004) to the inner
@@ -653,10 +670,10 @@ export default function MughalFrame({ progress = 0, reveal = LOADER_REVEAL, onRe
         </span>
       </div>
       {/* flying Ankit and flying Claude, over the frame */}
-      {figure(img("flying-ankit"), placed.ankit, ankit.shadow, ankitRef)}
-      {figure(img("flying-claude"), placed.claude, claude.shadow, claudeRef)}
-      {reveal === "golden" && figureLight(img("flying-ankit"), placed.ankit, ankit.tip, ankitGlowRef)}
-      {reveal === "golden" && figureLight(img("flying-claude"), placed.claude, claude.tip, claudeGlowRef)}
+      {figure(img("flying-ankit-s"), placed.ankit, ankit.shadow, ankitRef)}
+      {figure(img("flying-claude-s"), placed.claude, claude.shadow, claudeRef)}
+      {reveal === "golden" && figureLight(img("flying-ankit-s"), placed.ankit, ankit.tip, ankitGlowRef)}
+      {reveal === "golden" && figureLight(img("flying-claude-s"), placed.claude, claude.tip, claudeGlowRef)}
       </div>
       {/* the golden energy sequence (goldenReveal.ts): a transparent three.js
           canvas over the loader and the site */}

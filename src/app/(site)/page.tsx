@@ -1,3 +1,4 @@
+import { Suspense } from "react";
 import GradientHero from "@/components/sections/GradientHero";
 import ProblemsSolved from "@/components/sections/ProblemsSolved";
 import ImpactInNumbers from "@/components/sections/ImpactInNumbers";
@@ -27,9 +28,19 @@ export default function Home() {
       <GradientHero />
       <ProblemsSolved />
       <ImpactInNumbers />
-      <ProductIBuild />
-      <AfterChatai />
-      <Footer />
+      {/* Below the fold: each in its own Suspense boundary, so the browser
+          brings them to life (hydrates them) in separate, interruptible steps
+          after the first screens - not in one long freeze while the loader
+          is playing. The HTML is the same (nothing here suspends). */}
+      <Suspense fallback={null}>
+        <ProductIBuild />
+      </Suspense>
+      <Suspense fallback={null}>
+        <AfterChatai />
+      </Suspense>
+      <Suspense fallback={null}>
+        <Footer />
+      </Suspense>
       <PauseOffscreenAnimations />
     </main>
   );

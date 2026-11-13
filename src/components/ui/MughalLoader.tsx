@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { isReducedMotion } from "@/lib/gsap";
 import { markPreloaderComplete } from "@/lib/preloaderSignal";
 import { getLenis } from "@/lib/lenisInstance";
@@ -59,8 +59,8 @@ const BIGGER = "(min-width: 481px)";
 const LOADER_IMAGES: [string, string | undefined][] = [
   ["/images/loader-bg-teal.webp", undefined],
   ["/graphics/loader-frame/mandala.svg", undefined],
-  ...["flying-ankit-sm", "flying-claude-sm", "loader-cloud-left-sm", "corner-plant-sm", "loader-cloud-top-m", "loader-cloud-flat-m", "loader-flower-plant-m"].map((n): [string, string] => [`/images/${n}.webp`, PHONE]),
-  ...["flying-ankit", "flying-claude", "loader-cloud-left", "loader-cloud-right", "loader-cloud-bottom", "loader-cloud-top", "loader-flower-plant", "corner-plant"].map((n): [string, string] => [`/images/${n}.webp`, BIGGER]),
+  ...["flying-ankit-s-sm", "flying-claude-s-sm", "loader-cloud-left-sm", "corner-plant-sm", "loader-cloud-top-m", "loader-cloud-flat-m", "loader-flower-plant-m"].map((n): [string, string] => [`/images/${n}.webp`, PHONE]),
+  ...["flying-ankit-s", "flying-claude-s", "loader-cloud-left", "loader-cloud-right", "loader-cloud-bottom", "loader-cloud-top", "loader-flower-plant", "corner-plant"].map((n): [string, string] => [`/images/${n}.webp`, BIGGER]),
 ];
 
 // <link rel="preload"> tags in the loader's own HTML (the first thing in the
@@ -69,7 +69,8 @@ const preloads = LOADER_IMAGES.map(([href, media]) => <link key={href} rel="prel
 
 export default function MughalLoader() {
   const [done, setDone] = useState(false);
-  const [progress, setProgress] = useState(0);
+  // loading progress, read by the frame every frame (a ref: updating it never re-renders anything)
+  const progress = useRef(0);
 
   useEffect(() => {
     // Skipped under reduced motion - and, in development only, with ?noloader
@@ -90,7 +91,7 @@ export default function MughalLoader() {
     let total = 0, settled = 0, ready = false, finished = false, cancelled = false;
     // real progress, held under 100 until everything has settled
     const update = () => {
-      if (!cancelled) setProgress(ready ? 100 : total ? Math.min(95, (settled / total) * 100) : 0);
+      if (!cancelled) progress.current = ready ? 100 : total ? Math.min(95, (settled / total) * 100) : 0;
     };
     const tasks: Promise<void>[] = [];
     const track = (p: Promise<unknown>) => {
@@ -148,20 +149,22 @@ export default function MughalLoader() {
     };
   }, []);
 
+  const onDone = useCallback(() => {
+    releaseScroll();
+    markPreloaderComplete();
+    setDone(true);
+  }, []);
+
   if (done) return null;
   return (
     <>
     {preloads}
     <MughalFrame
-      progress={progress}
+      progressRef={progress}
       // the hero's entrance animations start as the golden wave opens
       onReveal={markPreloaderComplete}
       onRevealed90={releaseScroll}
-      onDone={() => {
-        releaseScroll();
-        markPreloaderComplete();
-        setDone(true);
-      }}
+      onDone={onDone}
     />
     </>
   );

@@ -22,15 +22,8 @@
 // (px - w/2, h/2 - py, 0). The fingertips meet at the screen centre.
 
 import type * as THREE_NS from "three";
-import type { EffectComposer as EffectComposerT } from "three/addons/postprocessing/EffectComposer.js";
 
-type Kit = {
-  THREE: typeof THREE_NS;
-  EffectComposer: typeof import("three/addons/postprocessing/EffectComposer.js").EffectComposer;
-  RenderPass: typeof import("three/addons/postprocessing/RenderPass.js").RenderPass;
-  UnrealBloomPass: typeof import("three/addons/postprocessing/UnrealBloomPass.js").UnrealBloomPass;
-  OutputPass: typeof import("three/addons/postprocessing/OutputPass.js").OutputPass;
-};
+type Kit = { THREE: typeof THREE_NS };
 
 // three.js and its post-processing, loaded on demand (only the loader needs them)
 // (started once and shared, so the loader can begin the download the moment
@@ -41,14 +34,9 @@ export function loadThree(): Promise<Kit> {
   return threeLoad;
 }
 async function loadThreeNow(): Promise<Kit> {
-  const [THREE, ec, rp, ub, op] = await Promise.all([
-    import("three"),
-    import("three/addons/postprocessing/EffectComposer.js"),
-    import("three/addons/postprocessing/RenderPass.js"),
-    import("three/addons/postprocessing/UnrealBloomPass.js"),
-    import("three/addons/postprocessing/OutputPass.js"),
-  ]);
-  return { THREE, EffectComposer: ec.EffectComposer, RenderPass: rp.RenderPass, UnrealBloomPass: ub.UnrealBloomPass, OutputPass: op.OutputPass };
+  // (no post-processing: the glow is drawn by the effects themselves)
+  const THREE = await import("three");
+  return { THREE };
 }
 
 // how ragged the reveal wave's edge is (px on a laptop screen), and its shape
@@ -98,12 +86,13 @@ export function createGoldenReveal(kit: Kit, canvas: HTMLCanvasElement, width: n
   const { THREE } = kit;
   let renderer: THREE_NS.WebGLRenderer;
   try {
-    renderer = new THREE.WebGLRenderer({ canvas, alpha: true, premultipliedAlpha: true, antialias: true, powerPreference: "high-performance" });
+    renderer = new THREE.WebGLRenderer({ canvas, alpha: true, premultipliedAlpha: true, antialias: false, powerPreference: "high-performance" });
   } catch {
     return null;
   }
   let w = width, h = height;
-  const pr = Math.min(2, window.devicePixelRatio || 1);
+  // soft glowing effects don't need retina resolution: 1x on phones, at most 1.25x elsewhere
+  const pr = Math.min(Math.min(width, height) < 600 ? 1 : 1.25, window.devicePixelRatio || 1);
   renderer.setPixelRatio(pr);
   renderer.setSize(w, h, false);
   renderer.setClearColor(0x000000, 0);
@@ -124,34 +113,16 @@ export function createGoldenReveal(kit: Kit, canvas: HTMLCanvasElement, width: n
   };
   placeCamera();
 
-  // --- bloom. UnrealBloomPass writes alpha 1 everywhere from its blur, which
-  // would make the whole canvas opaque; its blur is patched to carry the
-  // real alpha, so the canvas stays see-through except where it glows.
-  const composer: EffectComposerT = new kit.EffectComposer(renderer, new THREE.WebGLRenderTarget(w * pr, h * pr, { type: THREE.HalfFloatType }));
-  composer.setPixelRatio(pr);
-  composer.setSize(w, h);
-  composer.addPass(new kit.RenderPass(scene, camera, undefined, new THREE.Color(0x000000), 0));
-  const bloom = new kit.UnrealBloomPass(new THREE.Vector2(w, h), 0.55, 0.35, 0.18);
-  for (const m of bloom.separableBlurMaterials) {
-    m.fragmentShader = m.fragmentShader
-      .replace("vec3 diffuseSum = texture2D( colorTexture, vUv ).rgb * weightSum;", "vec4 diffuseSum = texture2D( colorTexture, vUv ) * weightSum;")
-      .replace("vec3 sample1 = texture2D( colorTexture, vUv + uvOffset ).rgb;", "vec4 sample1 = texture2D( colorTexture, vUv + uvOffset );")
-      .replace("vec3 sample2 = texture2D( colorTexture, vUv - uvOffset ).rgb;", "vec4 sample2 = texture2D( colorTexture, vUv - uvOffset );")
-      .replace("gl_FragColor = vec4(diffuseSum/weightSum, 1.0);", "gl_FragColor = diffuseSum/weightSum;");
-    m.needsUpdate = true;
-  }
-  composer.addPass(bloom);
-  composer.addPass(new kit.OutputPass());
 
   const disposables: { dispose: () => void }[] = [];
   const keep = <T extends { dispose: () => void }>(x: T) => (disposables.push(x), x);
-  const col = (c: string) => new THREE.Color(c);
+  // colours for the shaders, as plain sRGB numbers (drawn straight to the
+  // canvas, with no post-processing pass converting them)
+  const col = (c: string) => new THREE.Color().setStyle(c, THREE.LinearSRGBColorSpace);
 
   // --- 1. the spark: a small glowing core + a point light at the contact
   // point, and a soft amber light spilling round it (the light on the artwork)
-  const light = new THREE.PointLight(col(AMBER), 0, 0, 1.2);
-  light.position.set(0, 0, 90);
-  scene.add(light);
+  const light = { intensity: 0 }; // (was a point light lighting the rings; they're unlit now)
   const glowMat = keep(
     new THREE.ShaderMaterial({
       uniforms: { uColor: { value: col(AMBER) }, uCore: { value: col("#FFE7B0") }, uI: { value: 0 }, uHot: { value: 0 } },
@@ -160,7 +131,7 @@ export function createGoldenReveal(kit: Kit, canvas: HTMLCanvasElement, width: n
         varying vec2 vUv; uniform vec3 uColor; uniform vec3 uCore; uniform float uI; uniform float uHot;
         void main(){
           float d = length(vUv - 0.5) * 2.0;
-          float halo = exp(-d * 4.0) * 0.6 + exp(-d * 1.6) * 0.18;
+          float halo = exp(-d * 4.0) * 0.9 + exp(-d * 1.6) * 0.32 + exp(-d * 0.8) * 0.1;
           float core = exp(-d * 40.0) * uHot;
           vec3 c = uColor * halo + uCore * core;
           float a = clamp((halo + core) * uI, 0.0, 1.0);
@@ -177,7 +148,8 @@ export function createGoldenReveal(kit: Kit, canvas: HTMLCanvasElement, width: n
   scene.add(glow);
 
   // --- 2a. the explosion's particles: one Points object, motion on the GPU
-  const BURST = Math.round(Math.min(5000, 2200 + (w * h) / 900));
+  const small = Math.min(w, h) < 600;
+  const BURST = small ? 350 : Math.round(Math.min(1500, 800 + (w * h) / 3000));
   const burstGeo = keep(new THREE.BufferGeometry());
   {
     const dir = new Float32Array(BURST * 3), sp = new Float32Array(BURST), sz = new Float32Array(BURST), dl = new Float32Array(BURST), lf = new Float32Array(BURST), tone = new Float32Array(BURST);
@@ -233,7 +205,7 @@ export function createGoldenReveal(kit: Kit, canvas: HTMLCanvasElement, width: n
           float life = clamp(t / aLife, 0.0, 1.0);
           vA = step(0.0001, uTime - aDelay) * pow(1.0 - life, 1.6) * smoothstep(0.0, 0.05, t);
           vTone = aTone;
-          gl_PointSize = aSize * uScale * uPR * (uCamZ / -mv.z) * (1.0 - 0.4 * life);
+          gl_PointSize = 1.6 * aSize * uScale * uPR * (uCamZ / -mv.z) * (1.0 - 0.4 * life);
         }`,
       fragmentShader: /* glsl */ `
         uniform vec3 uGold, uAmber, uDeep; uniform float uFade;
@@ -258,15 +230,12 @@ export function createGoldenReveal(kit: Kit, canvas: HTMLCanvasElement, width: n
 
   // --- 2b. concentric energy rings: thin gold tori, tilted for depth, lit by
   // the point light
-  const ringGeo = keep(new THREE.TorusGeometry(1, 0.006, 12, 220));
+  const ringGeo = keep(new THREE.TorusGeometry(1, 0.009, 6, 160));
   const rings = [0, 1, 2].map((i) => {
     const mat = keep(
-      new THREE.MeshStandardMaterial({
-        color: col(GOLD),
-        emissive: col(i === 1 ? ORANGE : AMBER),
-        emissiveIntensity: 1.4,
-        metalness: 0.85,
-        roughness: 0.3,
+      // unlit (no lighting maths), additive gold
+      new THREE.MeshBasicMaterial({
+        color: new THREE.Color(i === 1 ? ORANGE : AMBER),
         transparent: true,
         opacity: 0,
         depthWrite: false,
@@ -310,7 +279,7 @@ export function createGoldenReveal(kit: Kit, canvas: HTMLCanvasElement, width: n
       trailGroup.remove(c);
       (c as THREE_NS.Mesh).geometry.dispose();
     });
-    const N = 11, s = S(), R = far() * 0.95;
+    const N = small ? 5 : 8, s = S(), R = far() * 0.95;
     for (let i = 0; i < N; i++) {
       const a0 = (i / N) * Math.PI * 2 + Math.random() * 0.4;
       const turn = (Math.random() < 0.5 ? -1 : 1) * (0.7 + Math.random() * 0.9);
@@ -323,7 +292,7 @@ export function createGoldenReveal(kit: Kit, canvas: HTMLCanvasElement, width: n
         const a = a0 + turn * f * f;
         pts.push(new THREE.Vector3(Math.cos(a) * r, Math.sin(a) * r, lift * Math.sin(f * Math.PI)));
       }
-      const geo = new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), 140, (1.1 + Math.random() * 1.1) * s, 6, false);
+      const geo = new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), 70, (1.1 + Math.random() * 1.1) * s, 4, false);
       trailGroup.add(new THREE.Mesh(geo, trailMat));
     }
   };
@@ -394,7 +363,7 @@ export function createGoldenReveal(kit: Kit, canvas: HTMLCanvasElement, width: n
   // the camera and out, turning as they go) and fading
   let dissolveGeo = keep(new THREE.BufferGeometry());
   const buildDissolve = () => {
-    const N = Math.round(Math.min(14000, (w * h) / 130));
+    const N = small ? 700 : Math.round(Math.min(3000, (w * h) / 450));
     const base = new Float32Array(N * 3), vel = new Float32Array(N * 3), sz = new Float32Array(N), spin = new Float32Array(N), tone = new Float32Array(N), life = new Float32Array(N);
     for (let i = 0; i < N; i++) {
       const x = (Math.random() - 0.5) * w, y = (Math.random() - 0.5) * h;
@@ -444,7 +413,7 @@ export function createGoldenReveal(kit: Kit, canvas: HTMLCanvasElement, width: n
           vA = on * (1.0 - l) * (1.0 - l) * smoothstep(0.0, 0.04, age);
           vTone = aTone;
           vAng = aSpin * age;
-          gl_PointSize = aSize * uScale * uPR * (uCamZ / -mv.z);
+          gl_PointSize = 1.3 * aSize * uScale * uPR * (uCamZ / -mv.z);
         }`,
       fragmentShader: /* glsl */ `
         uniform vec3 uGold, uAmber, uDeep; uniform float uFade;
@@ -471,14 +440,18 @@ export function createGoldenReveal(kit: Kit, canvas: HTMLCanvasElement, width: n
   scene.add(dissolve);
 
   // compile every shader now (before the touch), so the first frames don't stall
-  renderer.compile(scene, camera);
+  // shaders prepared in a spare moment between frames (not straight away,
+  // which could freeze the characters' flight); skipped if it's already gone
+  const compileNow = () => {
+    if (alive) renderer.compile(scene, camera);
+  };
+  if (typeof window.requestIdleCallback === "function") window.requestIdleCallback(compileNow, { timeout: 1500 });
+  else window.setTimeout(compileNow, 200);
 
   const resize = (W: number, H: number) => {
     w = W;
     h = H;
     renderer.setSize(w, h, false);
-    composer.setSize(w, h);
-    bloom.resolution.set(w, h);
     placeCamera();
     for (const m of [burstMat, dissolveMat]) {
       m.uniforms.uScale.value = S();
@@ -500,8 +473,6 @@ export function createGoldenReveal(kit: Kit, canvas: HTMLCanvasElement, width: n
     trailGroup.children.forEach((c) => (c as THREE_NS.Mesh).geometry.dispose());
     dissolveGeo.dispose();
     disposables.forEach((d) => d.dispose());
-    bloom.dispose();
-    composer.dispose();
     renderer.dispose();
     renderer.forceContextLoss();
   };
@@ -525,11 +496,11 @@ export function createGoldenReveal(kit: Kit, canvas: HTMLCanvasElement, width: n
       if (!alive) return;
       const t = tl ? tl.time() : 0; // the timeline is the one clock, so every part stays in step
       // spark and light
-      const sparkSize = (30 + 170 * st.spark + 260 * st.light) * s;
+      const sparkSize = (50 + 300 * st.spark + 460 * st.light) * s; // (larger: it now carries the glow a bloom pass used to add)
       glow.scale.set(sparkSize * 2, sparkSize * 2, 1);
       glowMat.uniforms.uI.value = Math.max(st.spark, st.light) * st.fade;
       glowMat.uniforms.uHot.value = st.hot;
-      light.intensity = st.light * 9e5 * s * s;
+      light.intensity = st.light; // (no light object any more)
       // particles
       burstMat.uniforms.uTime.value = Math.max(0, t - SPARK_END);
       burstMat.uniforms.uFade.value = st.fade;
@@ -539,7 +510,7 @@ export function createGoldenReveal(kit: Kit, canvas: HTMLCanvasElement, width: n
         const R = Math.max(1, far() * r.reach * p);
         r.m.scale.set(R, R, R * 0.6);
         r.m.rotation.z += 0.004;
-        r.mat.opacity = Math.sin(Math.PI * Math.min(1, p * 1.05)) * 0.9 * st.fade;
+        r.mat.opacity = Math.sin(Math.PI * Math.min(1, p * 1.05)) * st.fade;
       });
       // trails
       trailGroup.visible = st.trails > 0.001; // not before they start (their heads would sit at the centre)
@@ -566,7 +537,7 @@ export function createGoldenReveal(kit: Kit, canvas: HTMLCanvasElement, width: n
       } else hooks.cut(null);
       // at 0 (before the touch, when scrubbing) the loader's own build-up owns the mandala
       if (t > 0) hooks.mandala(st.mandala);
-      composer.render();
+      renderer.render(scene, camera);
       raf = requestAnimationFrame(frame);
     };
 
