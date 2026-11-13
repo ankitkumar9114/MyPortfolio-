@@ -3,10 +3,9 @@
 import { useEffect, useRef, useState } from "react";
 import MughalFrame, { flightAt } from "@/components/ui/MughalFrame";
 import { GOLDEN_DURATION } from "@/components/ui/goldenReveal";
-import { MANDALA_DURATION } from "@/components/ui/mandalaReveal";
 import { LOADER_REVEAL, LOADER_REVEAL_NAMES, type LoaderReveal } from "@/lib/loaderReveal";
 
-const ENDING: Record<LoaderReveal, number> = { mandala: MANDALA_DURATION, golden: GOLDEN_DURATION };
+const ENDING: Record<LoaderReveal, number> = { golden: GOLDEN_DURATION };
 
 // The loader over the real site (an iframe of the home page with ?noloader,
 // so the site's own loader doesn't play inside it), as one timeline from the

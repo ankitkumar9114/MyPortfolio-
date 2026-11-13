@@ -3,10 +3,9 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { PLANT } from "./cornerPlantEdge";
 import { MANDALA_EDGE, MANDALA_TIPS } from "./mandalaEdge";
-import { gsap, isReducedMotion } from "@/lib/gsap";
+import { gsap } from "@/lib/gsap";
 import { LOADER_REVEAL, type LoaderReveal } from "@/lib/loaderReveal";
 import { createGoldenReveal, loadThree, waveEdge, type GoldenReveal } from "./goldenReveal";
-import { playMandalaReveal } from "./mandalaReveal";
 
 // Frame for the new loader (border only, for now): the teal textured
 // background (loader-bg-teal.webp) inside a border made of two SVGs from
@@ -34,13 +33,12 @@ const GOLD_LINE = 2; // px, the inner gold line
 const TOUCH = 0.5; // px each fingertip stops short of the centre at 100% (they touch)
 const BLACK_LINE = GOLD_LINE;
 const FLIGHT_MIN_S = 2.6; // the figures' flight time (0 -> 100%) for the mandala ending, with the page loaded
-// the golden ending's build-up: the orb shows alone for ORB_HOLD_S, then the
+// the golden ending's timing: a short hold (ORB_HOLD_S), then the
 // characters fly in over at least GOLD_FLIGHT_S, so the touch is at 2.2 s
 // (when the page is already loaded)
 const ORB_HOLD_S = 0.5;
 const GOLD_FLIGHT_S = 1.7;
-const GOLD_BURST_S = 1.8; // s: the golden explosion starts (hands nearly touching); the reveal follows at 1.9 s
-const ORB_BURST_S = 0.35; // the orb bursting outwards at the touch
+const GOLD_BURST_S = 1.88; // s: the golden explosion starts (hands nearly touching); the reveal follows 0.1 s later
 
 // One step of the figures' flight. Two limits, whichever is behind:
 //  - the schedule: a smooth ease-in-out from 0 to 100 over the flight time,
@@ -90,8 +88,6 @@ const goldenBurstReach = () => (burstReach ??= flightAt(GOLD_BURST_S, "golden").
 //
 // At 100% the fingertips touch and one of two endings plays (`reveal`, by
 // default LOADER_REVEAL in lib/loaderReveal.ts):
-//   "mandala" - the mandala awakens and a golden ring opens the site
-//               (mandalaReveal.ts: CSS/SVG + GSAP)
 //   "golden"  - a three.js golden energy explosion and wave (goldenReveal.ts)
 // `onReveal` fires as the site starts to show, `onDone` once the loader is gone.
 //
@@ -107,16 +103,7 @@ export default function MughalFrame({ progress = 0, reveal = LOADER_REVEAL, onRe
   const mandalaLineRef = useRef<SVGSVGElement>(null);
   // the mandala ending's pieces
   const boxRef = useRef<HTMLDivElement>(null);
-  const litWrapRef = useRef<HTMLDivElement>(null);
-  const litInnerRef = useRef<HTMLDivElement>(null);
-  const litLineRef = useRef<SVGSVGElement>(null);
-  const pulseRef = useRef<HTMLDivElement>(null);
-  const ringRef = useRef<HTMLDivElement>(null);
-  // the golden ending's orb and the orb's light on the two characters
-  const orbRef = useRef<HTMLDivElement>(null);
-  const orbHaloRef = useRef<HTMLDivElement>(null);
-  const orbAttractRef = useRef<HTMLDivElement>(null);
-  const orbArcsRef = useRef<SVGSVGElement>(null);
+  // the golden ending's warm light on the two characters
   const ankitGlowRef = useRef<HTMLDivElement>(null);
   const claudeGlowRef = useRef<HTMLDivElement>(null);
   const cbRef = useRef({ onReveal, onDone });
@@ -244,7 +231,7 @@ export default function MughalFrame({ progress = 0, reveal = LOADER_REVEAL, onRe
     };
   };
   type Placed = ReturnType<typeof place>;
-  // the orb's warm light on a character: a gold glow from the fingertip
+  // the warm light on a character: a gold glow from the fingertip
   // side, masked to the figure's own shape, moved with it
   const figureLight = (src: string, g: Placed, tip: number[], ref: React.RefObject<HTMLDivElement | null>) => (
     <div
@@ -305,8 +292,6 @@ export default function MughalFrame({ progress = 0, reveal = LOADER_REVEAL, onRe
         const canvas = fxRef.current;
         if (!alive || !canvas) return;
         fx.current = createGoldenReveal(kit, canvas, window.innerWidth, window.innerHeight, gsap);
-        // the three.js energy ball takes over from the CSS one (which stays as the fallback)
-        if (fx.current && orbRef.current) orbRef.current.style.visibility = "hidden";
       })
       .catch(() => {});
     return () => {
@@ -340,32 +325,15 @@ export default function MughalFrame({ progress = 0, reveal = LOADER_REVEAL, onRe
   };
   // the golden build-up as they approach (k: 0 far apart .. 1 touching)
   const buildUp = (k: number) => {
-    const orb = orbRef.current;
-    if (!orb) return;
-    orb.style.opacity = "1";
-    const g = Math.min(1, Math.max(0, (k - 0.78) / (goldenBurstReach() - 0.78))); // grows only once the hands are this close, full size at the explosion
-    fx.current?.setCharge(g);
-    orb.style.transform = `scale(${r2(0.5 + 2.4 * g * g * (3 - 2 * g))})`;
-    if (orbHaloRef.current) orbHaloRef.current.style.opacity = String(r2(0.35 + 0.65 * k));
-    if (orbAttractRef.current) orbAttractRef.current.style.opacity = String(r2(Math.min(1, Math.max(0, (k - 0.05) / 0.3))));
-    if (orbArcsRef.current) orbArcsRef.current.style.opacity = String(r2(Math.min(1, Math.max(0, (k - 0.72) / 0.2))));
-    const light = String(r2(Math.pow(k, 1.4) * 0.95));
-    if (ankitGlowRef.current) ankitGlowRef.current.style.opacity = light;
-    if (claudeGlowRef.current) claudeGlowRef.current.style.opacity = light;
+    // no light on the characters yet: it comes from the explosion (mandalaGlow)
+    if (ankitGlowRef.current) ankitGlowRef.current.style.opacity = "0";
+    if (claudeGlowRef.current) claudeGlowRef.current.style.opacity = "0";
     // the mandala starts to light up (opacity only - no filters)
     for (const el of [mandalaImgRef.current, mandalaLineRef.current]) {
       if (!el) continue;
       el.style.opacity = String(r2(0.3 + 0.35 * k));
       el.style.filter = "";
     }
-  };
-  // the orb bursting outwards at the touch (p: 0..1 over ORB_BURST_S)
-  const orbBurst = (p: number) => {
-    const orb = orbRef.current;
-    if (!orb) return;
-    const e = 1 - Math.pow(1 - Math.min(1, Math.max(0, p)), 2);
-    orb.style.transform = `scale(${r2(2.9 + 3.1 * e)})`; // from its size at the touch
-    orb.style.opacity = String(r2(1 - e));
   };
   // the loader is cut along the golden wave's ragged edge (the same
   // formula the shader draws), so the site shows inside it
@@ -385,6 +353,10 @@ export default function MughalFrame({ progress = 0, reveal = LOADER_REVEAL, onRe
   };
   // the mandala lit up by the explosion (golden)
   const mandalaGlow = (g: number) => {
+    // the explosion's light on both characters, as strong as it is bright
+    const light = String(r2(Math.min(1, g) * 0.9));
+    if (ankitGlowRef.current) ankitGlowRef.current.style.opacity = light;
+    if (claudeGlowRef.current) claudeGlowRef.current.style.opacity = light;
     for (const el of [mandalaImgRef.current, mandalaLineRef.current]) {
       if (!el) continue;
       el.style.opacity = String(r2(0.65 + 0.35 * g));
@@ -401,11 +373,6 @@ export default function MughalFrame({ progress = 0, reveal = LOADER_REVEAL, onRe
       onReveal: () => cbRef.current.onReveal?.(),
       onDone: () => cbRef.current.onDone?.(),
     };
-    const els = { box: boxRef.current, litWrap: litWrapRef.current, litInner: litInnerRef.current, litLine: litLineRef.current, pulse: pulseRef.current, wave: ringRef.current };
-    if (reveal === "mandala" && root && els.box && els.litWrap && els.litInner && els.litLine && els.pulse && els.wave) {
-      const fade = [ankitRef.current, claudeRef.current, statusRef.current].filter((e): e is HTMLImageElement | HTMLDivElement => !!e);
-      return playMandalaReveal({ root, box: els.box, litWrap: els.litWrap, litInner: els.litInner, litLine: els.litLine, pulse: els.pulse, wave: els.wave, fade }, gsap, hooks, isReducedMotion(), scrubbing);
-    }
     if (golden && fx.current) return fx.current.play(hooks, { scrub: scrubbing });
     if (scrubbing) return null; // three.js not ready yet: try again on the next move
     // no WebGL: a plain fade instead
@@ -432,17 +399,9 @@ export default function MughalFrame({ progress = 0, reveal = LOADER_REVEAL, onRe
       showFlight(st.shown);
       const endNow = golden ? st.shown >= goldenBurstReach() * 100 - 1e-6 : st.shown >= 100;
       if (endNow && !explodedRef.current) {
-        // the ending starts: the orb bursts (golden, while the hands close
+        // the ending starts (golden: the explosion, while the hands close
         // the last gap), the ending takes it from here
         explodedRef.current = true;
-        if (golden && orbRef.current) {
-          const orb = orbRef.current, t0 = performance.now();
-          const burst = (n: number) => {
-            orbBurst((n - t0) / 1000 / ORB_BURST_S);
-            if (n - t0 < ORB_BURST_S * 1000) requestAnimationFrame(burst);
-          };
-          if (orb) requestAnimationFrame(burst);
-        }
         startEnding(false);
       }
       if (st.shown >= 100) return; // they've touched: nothing left to move
@@ -470,7 +429,6 @@ export default function MughalFrame({ progress = 0, reveal = LOADER_REVEAL, onRe
       showFlight(shown);
       if (!endingRef.current) endingRef.current = startEnding(true);
       endingRef.current?.seek(scrub - endAt, false);
-      if (golden) orbBurst((scrub - endAt) / ORB_BURST_S);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- the helpers only read refs and layout
   }, [scrub, placed, reveal]);
@@ -511,28 +469,7 @@ export default function MughalFrame({ progress = 0, reveal = LOADER_REVEAL, onRe
             <circle key={`${x},${y}`} cx={x} cy={y} r={0.008} fill="#B9823A" />
           ))}
         </svg>
-        {reveal === "mandala" && (
-          <>
-            <div ref={litWrapRef} aria-hidden="true" className="absolute inset-0" style={{ opacity: 0, transform: "scale(0.04)", maskImage: "radial-gradient(closest-side, #000 78%, transparent 100%)", WebkitMaskImage: "radial-gradient(closest-side, #000 78%, transparent 100%)" }}>
-              <div ref={litInnerRef} className="absolute inset-0">
-                {/* eslint-disable-next-line @next/next/no-img-element -- decorative SVG */}
-                <img src={`${P}mandala-lit.svg`} alt="" draggable={false} className="mandala-spin absolute inset-0 h-full w-full select-none" />
-              </div>
-            </div>
-            <svg ref={litLineRef} aria-hidden="true" className="mandala-spin absolute inset-0 h-full w-full overflow-visible" viewBox="0 0 1 1" preserveAspectRatio="none" style={{ opacity: 0 }}>
-              <path data-draw="" d={MANDALA_EDGE} pathLength={1} fill="none" stroke="#F4C766" strokeWidth={0.005} strokeDasharray="1" strokeDashoffset="1" />
-              <path data-shimmer="" d={MANDALA_EDGE} pathLength={1} fill="none" stroke="#FFE3A0" strokeWidth={0.011} strokeLinecap="round" strokeDasharray="0.05 0.95" strokeDashoffset="0" opacity={0} />
-            </svg>
-          </>
-        )}
       </div>
-      {reveal === "mandala" && (
-        // the warm glow at the centre, and the golden ring that travels out
-        <>
-          <div ref={pulseRef} aria-hidden="true" className="pointer-events-none absolute rounded-full" style={{ left: r2(w / 2 - mh * 0.35), top: r2(h / 2 - mh * 0.35), width: r2(mh * 0.7), height: r2(mh * 0.7), opacity: 0, background: "radial-gradient(circle, rgba(255, 214, 130, 0.55) 0%, rgba(242, 181, 68, 0.28) 30%, rgba(217, 162, 58, 0.08) 58%, rgba(217, 162, 58, 0) 72%)" }} />
-          <div ref={ringRef} aria-hidden="true" className="pointer-events-none absolute rounded-full" style={{ left: r2(w / 2 - Math.hypot(w, h) / 2), top: r2(h / 2 - Math.hypot(w, h) / 2), width: r2(Math.hypot(w, h)), height: r2(Math.hypot(w, h)), opacity: 0, background: "radial-gradient(circle, rgba(242, 181, 68, 0) 62%, rgba(242, 181, 68, 0.16) 80%, rgba(255, 214, 130, 0.42) 86%, rgba(242, 181, 68, 0.14) 90%, rgba(242, 181, 68, 0) 96%)" }} />
-        </>
-      )}
       <svg width={w} height={h} viewBox={`0 0 ${w} ${h}`} className="absolute inset-0 block" aria-hidden="true">
         {/* the band: a gradient from the outer edge (#710004) to the inner
             edge (#A0251E) on each side, mitred at the corners; the SVG tiles
@@ -592,7 +529,6 @@ export default function MughalFrame({ progress = 0, reveal = LOADER_REVEAL, onRe
         </span>
       </div>
       {/* flying Ankit and flying Claude, over the frame */}
-      {reveal === "golden" && <Orb size={mh * 0.42} cx={w / 2} cy={h / 2} orbRef={orbRef} haloRef={orbHaloRef} attractRef={orbAttractRef} arcsRef={orbArcsRef} />}
       {figure("/images/flying-ankit.webp", placed.ankit, ankit.shadow, ankitRef)}
       {figure("/images/flying-claude.webp", placed.claude, claude.shadow, claudeRef)}
       {reveal === "golden" && figureLight("/images/flying-ankit.webp", placed.ankit, ankit.tip, ankitGlowRef)}
@@ -602,58 +538,5 @@ export default function MughalFrame({ progress = 0, reveal = LOADER_REVEAL, onRe
           canvas over the loader and the site */}
       {reveal === "golden" && <canvas ref={fxRef} aria-hidden="true" className="pointer-events-none fixed inset-0 z-[1001] h-full w-full" />}
     </>
-  );
-}
-
-// The golden ending's energy orb (before the touch): a warm pulsing core and
-// halo, motes orbiting it, motes drawn in towards it, circling energy
-// streams and a few crackling arcs - all CSS/SVG (globals.css, orb-*).
-// MughalFrame scales it and sets each part's strength as the characters
-// approach. `size` is the orb's whole box; the core is a small part of it.
-type DivRef = React.RefObject<HTMLDivElement | null>;
-type SvgRef = React.RefObject<SVGSVGElement | null>;
-function Orb({ size, cx, cy, orbRef, haloRef, attractRef, arcsRef }: { size: number; cx: number; cy: number; orbRef: DivRef; haloRef: DivRef; attractRef: DivRef; arcsRef: SvgRef }) {
-  const q = (n: number) => Math.round(n * 100) / 100;
-  const core = size * 0.3, mote = Math.max(3, size * 0.022);
-  // fine dust round the light (fixed, so server and browser agree)
-  const dust = Array.from({ length: 16 }, (_, i) => {
-    const a = i * 2.39996, d = size * (0.07 + ((i * 37) % 17) / 17 * 0.17);
-    return { x: q(size / 2 + Math.cos(a) * d), y: q(size / 2 + Math.sin(a) * d), s: q(Math.max(1.5, size * (0.008 + (i % 3) * 0.004))), delay: q(((i * 0.29) % 1.8)) };
-  });
-  // motes drawn in from all round (fixed, so server and browser agree)
-  const pulls = Array.from({ length: 12 }, (_, i) => {
-    const a = (i / 12) * Math.PI * 2 + (i % 3) * 0.4, d = size * (0.38 + (i % 4) * 0.05);
-    return { dx: q(Math.cos(a) * d), dy: q(Math.sin(a) * d), delay: q((i * 0.37) % 1.3) };
-  });
-  // a few thin jagged arcs round the core
-  const arcs = Array.from({ length: 5 }, (_, i) => {
-    const a0 = (i / 5) * Math.PI * 2 + 0.3, pts: string[] = [];
-    for (let k = 0; k <= 5; k++) {
-      const a = a0 + k * 0.16, r = 0.5 * (0.17 + ((k * 7 + i * 3) % 5) * 0.012) * 2;
-      pts.push(`${q(50 + Math.cos(a) * r * 50)} ${q(50 + Math.sin(a) * r * 50)}`);
-    }
-    return { d: `M${pts.join("L")}`, delay: q(i * 0.23) };
-  });
-  return (
-    <div ref={orbRef} aria-hidden="true" className="pointer-events-none absolute will-change-transform" style={{ left: q(cx - size / 2), top: q(cy - size / 2), width: q(size), height: q(size) }}>
-      <div ref={haloRef} className="orb-halo absolute" style={{ left: q(size * 0.2), top: q(size * 0.2), width: q(size * 0.6), height: q(size * 0.6), opacity: 0.35 }} />
-      {/* motes drawn in towards the orb */}
-      <div ref={attractRef} className="absolute inset-0" style={{ opacity: 0 }}>
-        {pulls.map((p, i) => (
-          <div key={i} className="orb-mote orb-attract absolute" style={{ left: q(size / 2 - mote / 2), top: q(size / 2 - mote / 2), width: q(mote), height: q(mote), ["--dx" as string]: `${p.dx}px`, ["--dy" as string]: `${p.dy}px`, animationDelay: `${p.delay}s` }} />
-        ))}
-      </div>
-      {/* thin crackling arcs */}
-      <svg ref={arcsRef} viewBox="0 0 100 100" className="absolute inset-0 h-full w-full overflow-visible" style={{ opacity: 0 }}>
-        {arcs.map((a, i) => (
-          <path key={i} className="orb-arc" d={a.d} fill="none" stroke="#FFE2A0" strokeWidth="0.35" strokeLinejoin="round" style={{ animationDelay: `${a.delay}s` }} />
-        ))}
-      </svg>
-      {/* the core, with motes orbiting it */}
-      <div className="orb-core absolute" style={{ left: q(size / 2 - core / 2), top: q(size / 2 - core / 2), width: q(core), height: q(core) }} />
-      {dust.map((d, i) => (
-        <div key={i} className="orb-mote orb-dust absolute" style={{ left: q(d.x - d.s / 2), top: q(d.y - d.s / 2), width: d.s, height: d.s, animationDelay: `${d.delay}s` }} />
-      ))}
-    </div>
   );
 }

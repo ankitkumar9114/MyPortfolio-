@@ -1,17 +1,15 @@
-// How the site's loader ends, once the two fingertips touch. Both endings
-// are kept; change LOADER_REVEAL to switch (and try either at /loader-preview
-// in development).
+// How the site's loader ends, once the two fingertips touch. One ending now:
 //
-//   "mandala" - Mandala activation: the mandala lights up, turns, swells, and
-//               a soft golden ring opens the site (CSS/SVG + GSAP, no WebGL)
-//   "golden"  - Golden energy: a three.js explosion of golden particles,
-//               rings and trails, then a golden wave dissolves the artwork
+//   "golden" - Golden energy: an energy ball grows between the hands and
+//              bursts into a three.js explosion; a golden wave opens the site
+//
+// (The "Mandala activation" ending was removed.) Try it at /loader-preview in
+// development.
 
-export type LoaderReveal = "mandala" | "golden";
+export type LoaderReveal = "golden";
 
-export const LOADER_REVEAL: LoaderReveal = "mandala";
+export const LOADER_REVEAL: LoaderReveal = "golden";
 
 export const LOADER_REVEAL_NAMES: Record<LoaderReveal, string> = {
-  mandala: "Mandala activation",
   golden: "Golden energy",
 };
