@@ -43,7 +43,7 @@ const FLIGHT_MIN_S = 2.6; // the figures' flight time (0 -> 100%) for the mandal
 // (when the page is already loaded)
 const ORB_HOLD_S = 0.5;
 const GOLD_FLIGHT_S = 1.46; // the fingertips meet at 1.96 s
-const GOLD_BURST_S = ORB_HOLD_S + GOLD_FLIGHT_S; // s: the sparks, rings and reveal start the moment the fingertips touch (1.96 s)
+const GOLD_BURST_S = 1.76; // s: the reveal starts here - just before the fingertips meet (1.96 s); they keep closing in as it opens
 
 // One step of the figures' flight. Two limits, whichever is behind:
 //  - the schedule: a smooth ease-in-out from 0 to 100 over the flight time,
