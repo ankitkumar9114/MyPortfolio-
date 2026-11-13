@@ -454,7 +454,13 @@ function MughalFrame({ progress = 0, progressRef, reveal = LOADER_REVEAL, onReve
       cut,
       mandala: mandalaGlow,
       onReveal: () => cbRef.current.onReveal?.(),
-      onDone: () => cbRef.current.onDone?.(),
+      onDone: () => {
+        // hide the loader (and its canvas) at once, before it's removed, so
+        // nothing of it can show again in between
+        if (rootRef.current) rootRef.current.style.visibility = "hidden";
+        if (fxRef.current) fxRef.current.style.visibility = "hidden";
+        cbRef.current.onDone?.();
+      },
     };
     if (golden && fx.current) return fx.current.play(hooks, { scrub: scrubbing });
     if (scrubbing) return null; // the effect isn't set up yet: try again on the next move

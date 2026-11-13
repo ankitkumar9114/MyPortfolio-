@@ -45,12 +45,12 @@ export default function LoaderPreview() {
     return () => cancelAnimationFrame(raf);
   }, [playing, total]);
 
-  // the live loader has finished: show its last frame (scrub mode, at the end)
+  // the live loader has finished (it hides itself): stop the clock at the end,
+  // keeping the finished run on screen (no swap to a fresh frame, no flash)
   const finishLive = useCallback(() => {
     timeRef.current = total;
     setTimeState(total);
     setPlaying(false);
-    setLive(false);
   }, [total]);
 
   const choose = (r: LoaderReveal) => {

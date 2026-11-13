@@ -127,7 +127,8 @@ export function createGoldenReveal(canvas: HTMLCanvasElement, width: number, hei
       paused: !!opts.scrub,
       onComplete: () => {
         if (opts.scrub) return; // kept, so it can be moved back
-        hooks.cut(null);
+        // (the cut is left as it is - fully open - so the loader never
+        // flashes back before it's removed)
         dispose();
         hooks.onDone();
       },
