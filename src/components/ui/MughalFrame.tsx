@@ -37,10 +37,10 @@ const TOUCH = 0.5; // px each fingertip stops short of the centre at 100% (they 
 const BLACK_LINE = GOLD_LINE;
 const FLIGHT_MIN_S = 2.6; // the figures' flight time (0 -> 100%) for the mandala ending, with the page loaded
 // the golden ending's timing: a short hold (ORB_HOLD_S), then the
-// characters fly in over at least GOLD_FLIGHT_S, so the touch is at 2.2 s
+// characters fly in over GOLD_FLIGHT_S, so the touch is at 1.96 s
 // (when the page is already loaded)
 const ORB_HOLD_S = 0.5;
-const GOLD_FLIGHT_S = 1.7;
+const GOLD_FLIGHT_S = 1.46; // the fingertips meet at 1.96 s - inside the explosion (1.88 s), just before the site opens (1.98 s)
 const GOLD_BURST_S = 1.88; // s: the golden explosion starts (hands nearly touching); the reveal follows 0.1 s later
 
 // One step of the figures' flight. Two limits, whichever is behind:
@@ -194,8 +194,9 @@ export default function MughalFrame({ progress = 0, reveal = LOADER_REVEAL, onRe
   const pX = (x: number) => x * MS;
   const phonePieces: Piece[] = [
     // red flower plants: top centre (upside down) and bottom centre (mirrored)
-    { src: img("loader-flower-plant"), x: w / 2 - 272.2 * MS, y: pT(0), w: 544.4 * MS, h: 225 * MS, rotate: 180, px: true },
-    { src: img("loader-flower-plant"), x: w / 2 - 272.2 * MS, y: pB(619), w: 544.4 * MS, h: 225 * MS, flip: true, px: true },
+    // (loader-flower-plant-m: the plant rebuilt from its Figma parts at phone size)
+    { src: "/images/loader-flower-plant-m.webp", x: w / 2 - 272.2 * MS, y: pT(0), w: 544.4 * MS, h: 225 * MS, rotate: 180, px: true },
+    { src: "/images/loader-flower-plant-m.webp", x: w / 2 - 272.2 * MS, y: pB(619), w: 544.4 * MS, h: 225 * MS, flip: true, px: true },
     // cloud 3 (left, its export includes its shadow)
     { src: img("loader-cloud-left"), x: pX(-161.5), y: pT(161), w: 345 * MS, h: 145.3 * MS, px: true },
     // cloud 2 (top right)
@@ -246,7 +247,7 @@ export default function MughalFrame({ progress = 0, reveal = LOADER_REVEAL, onRe
       alt=""
       aria-hidden="true"
       draggable={false}
-      className="pointer-events-none absolute select-none"
+      className="pointer-events-none absolute max-w-none select-none"
       style={{
         left: r2(p.x),
         top: r2(p.y),
@@ -459,8 +460,8 @@ export default function MughalFrame({ progress = 0, reveal = LOADER_REVEAL, onRe
       if (!done) setArtReady(true);
       done = true;
     };
-    const names = w <= PHONE_MAX_W ? ["flying-ankit", "flying-claude", "loader-cloud-left", "loader-flower-plant", "corner-plant"] : ["flying-ankit", "flying-claude", "loader-cloud-left", "loader-cloud-right", "loader-cloud-bottom", "loader-cloud-top", "loader-flower-plant", "corner-plant"];
-    const extra = w <= PHONE_MAX_W ? ["/images/loader-cloud-top-m.webp", "/images/loader-cloud-flat-m.webp"] : [];
+    const names = w <= PHONE_MAX_W ? ["flying-ankit", "flying-claude", "loader-cloud-left", "corner-plant"] : ["flying-ankit", "flying-claude", "loader-cloud-left", "loader-cloud-right", "loader-cloud-bottom", "loader-cloud-top", "loader-flower-plant", "corner-plant"];
+    const extra = w <= PHONE_MAX_W ? ["/images/loader-cloud-top-m.webp", "/images/loader-cloud-flat-m.webp", "/images/loader-flower-plant-m.webp"] : [];
     const loads = [...names.map(img), ...extra].map(
       (src) =>
         new Promise<void>((res) => {
